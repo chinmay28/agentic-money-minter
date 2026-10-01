@@ -1,4 +1,4 @@
-# agentic-money-minter
+# Agentic Money Minter
 
 Rules-based trading prompts run as scheduled routines against a Robinhood agentic account.
 Each rule in `rules/` is a self-contained prompt: paste the **Prompt** section into the routine
