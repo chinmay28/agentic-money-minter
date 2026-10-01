@@ -51,7 +51,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
 ### E0 — Establish context (every run)
 
 1. Flags `MAY_ENTER`, `MAY_CANCEL_TARGET`, `CLOSE_OUT_DAY` come from the dispatcher above.
-2. `Robinhood:get_accounts` → use the single agentic-enabled brokerage account. `Robinhood:get_equity_tradability` for TRADE, PARK, OTHER_TRADE and OTHER_PARK. If the market is closed (holiday, early close, halt), report and stop.
+2. `Robinhood:get_accounts` → use the single agentic-enabled brokerage account. `Robinhood:get_equity_tradability` for TRADE, PARK, OTHER_TRADE and OTHER_PARK. If the market is closed (holiday, halt, or after the close on an early-close day — e.g. the 10:03 run), place no TRADE or option orders; still take the snapshot, run E4 if PARK is tradable (otherwise report the idle cash), then report and stop.
 3. Snapshot:
    - `Robinhood:get_equity_positions` → TRADE and OTHER_TRADE quantity and average cost (`ENTRY`); PARK and OTHER_PARK quantities. If a lot exists in OTHER_TRADE, treat that ticker as `TRADE` for this run (carry-over rule) and note it in the report.
    - `Robinhood:get_option_positions` → any short TRADE calls (strike, expiry, quantity, premium received).
@@ -168,6 +168,7 @@ Before placing any Part A order that costs cash — most often buying to close a
 - `FAST_MA = 50 completed hourly closes`
 - `SLOW_MA = 200 completed hourly closes`
 - `ROUTING = market-maker routing with no explicit transaction fee`
+- `FEE_RATE = 0` (no explicit fee under market-maker routing; if a review ever shows an explicit fee, abort per B6 rather than changing this value)
 - `ENTRY_TIF = GTC`
 - `TARGET_TIF = GTC`
 - `BEAR_EXIT_TIF = GTC, repriced each run (30-minute cadence) while bid ≥ breakeven; withdrawn if bid falls below breakeven`
@@ -236,7 +237,7 @@ Use BTC for the directional trade and USDG only as the sleeve's parking asset. D
 
 Use actual BTC and USDG fills, never submitted order amounts.
 
-1. Confirm no BTC/USDG fill is timestamped before `STRATEGY_START_UTC` and after the most recent fill that precedes it — i.e. the snapshot instant sits cleanly between activity.
+1. Confirm the snapshot instant sits cleanly between activity: no BTC/USDG order was open or partially filled at `STRATEGY_START_UTC`, so every fill is unambiguously either before it (ignored) or after it (sleeve activity).
 2. `SLEEVE_FREE_CASH = total BTC/USDG sell proceeds − total BTC/USDG buy costs − all explicit sleeve fees` for every fill after `STRATEGY_START_UTC` (the starting USDG is an asset, not cash). This is a transaction-ledger balance, not account buying power.
 2a. **Positions can lag fills.** `get_crypto_positions` has been observed to omit a BTC position minutes after its buy filled. Never derive `FLAT` from positions alone: if fills since start imply a BTC quantity that positions do not show, re-read positions once after 20 seconds; if still absent, treat the position as pending (`POSITION_PENDING`), place no BTC buy, and — if a sell is required — retry the position read on the next run rather than assuming the BTC is gone.
 3. Pair BTC fills into chronological, non-overlapping lots. `BTC_REALIZED_PNL` = completed BTC sell proceeds minus their paired BTC costs and explicit BTC fees.
@@ -416,10 +417,9 @@ Return two parts.
   "sma50": null,
   "sma200": null,
   "regime": "bullish|bearish|unknown",
-  "strategy_start_capital": 1000.0,
+  "strategy_start_capital": 1001.0,
   "parking_asset": "USDG",
   "btc_window": "active|paused|unknown",
-  "initial_usdg_fill_id": null,
   "btc_realized_pnl": null,
   "sleeve_free_cash": null,
   "sleeve_book_equity": null,
