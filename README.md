@@ -6,4 +6,4 @@ and set the schedule described at the top of the file.
 
 | Rule | Schedule | Summary |
 |---|---|---|
-| [equity-swing-btc-usdg-combined](rules/equity-swing-btc-usdg-combined.md) | Hourly at :15 and :45, 24/7 | XLK/SATA swing (VGT/BOXX in December) during NYSE hours; BTC/USDG dip-buy sleeve off-hours |
+| [equity-swing-btc-usdg-combined](rules/equity-swing-btc-usdg-combined.md) | Hourly at :15 and :45, 24/7 | XLK/SATA swing (VGT/BOXX in December) during NYSE hours; BTC/USDG trend-following sleeve off-hours (market entry when SMA50 > SMA200) |
