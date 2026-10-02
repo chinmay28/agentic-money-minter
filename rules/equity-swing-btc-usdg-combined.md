@@ -174,7 +174,6 @@ Before placing any Part A order that costs cash — most often buying to close a
 - `START_CAPITAL = $1,001.00` (the USDG held at activation)
 - `STRATEGY_START_UTC = 2026-09-24T03:45:00Z` (activated; the account held 1,001 USDG and no open crypto orders at this instant)
 - **Sleeve scope: all BTC and all USDG in the account belong to Part B**, however and whenever acquired. There is no excluded quantity.
-- `DIP = 2.00%`
 - `PROFIT_TARGET = 0.50%`
 - `FAST_MA = 50 completed hourly closes`
 - `SLOW_MA = 200 completed hourly closes`
@@ -197,7 +196,7 @@ Before placing any Part A order that costs cash — most often buying to close a
 6. Robinhood's tools supply BTC and USDG bid/ask, positions, and complete order/fill history. **Hourly candles come from the Coinbase Exchange public API** (see `CANDLE_SOURCE` below); Robinhood exposes no historical data. Orders and quotes used for execution still come only from Robinhood.
 
 
-Use BTC for the directional trade and USDG only as the sleeve's parking asset. Do not trade any other cryptocurrency, stock, ETF, option, future, or event contract. Use default market-maker routing. **BTC orders are limit orders only. USDG conversions are market orders** (Robinhood accepts only market orders for USDG; it is a $1.00 stablecoin, so there is no price to protect). If an order review shows an explicit exchange-routing fee, a different routing mode, margin, borrowing, or an unexpected quantity or notional, abort that order and report.
+Use BTC for the directional trade and USDG only as the sleeve's parking asset. Do not trade any other cryptocurrency, stock, ETF, option, future, or event contract. Use default market-maker routing. **BTC entries are market orders on a price trigger; BTC sells (target, bearish exit) are limit orders. USDG conversions are market orders** (Robinhood accepts only market orders for USDG; it is a $1.00 stablecoin, so there is no price to protect). If an order review shows an explicit exchange-routing fee, a different routing mode, margin, borrowing, or an unexpected quantity or notional, abort that order and report.
 
 ### BTC window behaviour (flags come from the dispatcher)
 
@@ -212,8 +211,7 @@ Use BTC for the directional trade and USDG only as the sleeve's parking asset. D
 ### Core strategy
 
 - Enter only in a bullish hourly regime: `SMA50 > SMA200`.
-- While flat, track the highest completed hourly high since the last BTC exit fill.
-- Maintain one limit buy at `DIP` (2%) below that high-water mark.
+- Whenever the regime is bullish and the sleeve is flat, enter with a **market buy** on that run. No dip condition, no high-water mark, no resting buy orders.
 - After an entry fills, maintain one limit sell at 0.5% above the actual weighted-average fill price.
 - If the hourly regime becomes bearish (`SMA50 <= SMA200`) before the target fills, exit at the current bid **only if that bid is at or above breakeven**; otherwise keep the profit target and hold. Never realize a loss.
 - Hold at most one BTC position. Never average down, pyramid, or add to an existing position.
@@ -263,7 +261,7 @@ Use actual BTC and USDG fills, never submitted order amounts.
 - `USDG_RELEASE_WORKING`: BTC quantity is zero and a USDG market sell is still open (normally momentary) to fund a valid active-window BTC entry.
 - `ENTRY_FUNDED`: BTC quantity is zero, sleeve USDG has been sold, and sleeve free cash is available for one BTC entry order.
 - `USDG_SWEEP_WORKING`: BTC quantity is zero and a USDG market buy is still open (normally momentary) to park free sleeve cash.
-- `ENTRY_WORKING`: BTC quantity is zero and exactly one BTC limit buy is open.
+- `ENTRY_WORKING`: BTC quantity is zero and a BTC buy order is open (should be momentary — a market buy in flight — or a leftover to cancel).
 - `LONG_TARGET`: BTC quantity is positive and exactly one BTC limit sell exists at the calculated profit target; no buy order or bearish-exit order is open.
 - `LONG_UNPROTECTED`: BTC quantity is positive and no BTC sell order is open.
 - `BEAR_EXIT_WORKING`: BTC quantity is positive and exactly one BTC sell order intended as the bearish exit is open.
@@ -325,15 +323,8 @@ If `BULLISH`:
 
 Run only after confirming BTC quantity is zero.
 
-1. `ANCHOR_TIME`:
-   - If at least one strategy BTC sell has filled, use the most recent sell fill time.
-   - Otherwise use `STRATEGY_START_UTC`.
-2. Fetch all completed hourly candles from the candle containing `ANCHOR_TIME` through `LATEST_COMPLETE_HOUR`.
-3. `HIGH_WATER` = maximum completed hourly high in that interval.
-4. `ENTRY_LIMIT = HIGH_WATER × (1 − DIP)` = HIGH_WATER × 0.98, rounded **down** to the permitted BTC price increment.
-5. A standing BTC buy requires the sleeve to be funded in cash. USDG is not collateral and must be sold before placing the BTC order.
-6. `BUY_QTY = floor(SLEEVE_FREE_CASH / ENTRY_LIMIT, Robinhood quantity precision)`.
-7. Require `BUY_QTY > 0`, estimated notional at least Robinhood's minimum, and reviewed maximum cost no greater than `SLEEVE_FREE_CASH`.
+1. There is no entry price level. The only entry conditions are: regime `BULLISH`, sleeve flat, `SPREAD ≤ MAX_SPREAD`, and the sleeve funded in cash (USDG sold first — USDG is not collateral).
+2. The buy is placed by dollar amount (`SLEEVE_FREE_CASH`); require it to be at least Robinhood's minimum crypto order and the reviewed worst-case cost no greater than `SLEEVE_FREE_CASH` + $0.50.
 
 #### B5a. Bearish while flat
 
@@ -341,20 +332,20 @@ If `BEARISH`:
 
 - Cancel any open BTC buy order and poll until terminal.
 - Sweep all free sleeve cash into USDG under B5c.
-- Place no entry order.
-- Report SMA50, SMA200, their difference, HIGH_WATER, and the entry price that would apply if the regime became bullish.
+- Do not enter, whatever the ask.
+- Report SMA50, SMA200 and their difference.
 
-#### B5b. Bullish while flat
+#### B5b. Bullish while flat — enter at market
 
 If `BULLISH`:
 
-1. Maintain exactly one GTC BTC limit buy for `BUY_QTY` at `ENTRY_LIMIT` while the BTC window is active and `SPREAD ≤ MAX_SPREAD`. If the spread guard trips while a buy is working, leave the existing order alone; only new placements are blocked.
-2. If the sleeve is parked in USDG and no BTC buy exists, cancel any stale USDG buy, then review and place a **market sell** for the entire strategy-owned USDG quantity (by quantity, not dollars). Poll until filled (up to three minutes). If it is not fully filled, cancel the remainder, refresh actual USDG and cash, and stop; do not use unrelated account cash. Use the actual fill proceeds, not USDG × $1.00, as the released cash.
-3. Once `SLEEVE_FREE_CASH` is confirmed, review and place the BTC buy.
-4. If a buy exists with a different price or quantity because HIGH_WATER or sleeve cash changed, cancel it, confirm terminal state, refresh position/cash, and replace it.
-5. If the correct order already exists, leave it unchanged.
-6. The order may rest only during the active BTC window and fill only at its limit or better. Do not convert it to a market order merely because the displayed price is below the trigger.
-7. If an entry fills, calculate `ENTRY` from actual fills and immediately place the B4b profit target after confirming the position. If the tool call sequence cannot complete, the next run must detect `LONG_UNPROTECTED` and place it.
+1. If `SPREAD > MAX_SPREAD`: do not enter; report `SPREAD_TOO_WIDE` with the numbers and keep the sleeve parked.
+2. Otherwise:
+   a. Cancel any stale USDG buy, then review and place a **market sell** for the entire strategy-owned USDG quantity (by quantity). Poll until filled (up to three minutes). If not fully filled, cancel the remainder, refresh USDG and cash, and stop; do not use unrelated account cash. Released cash = actual fill proceeds.
+   b. Review and place a **market buy of BTC by dollar amount** = `SLEEVE_FREE_CASH` rounded down to the cent; confirm from the review that the worst-case cost (Robinhood's ~1% market collar) does not exceed sleeve cash plus $0.50, otherwise reduce the amount by 1% and re-review. Confirm the fill.
+   c. Calculate `ENTRY` from the actual fill(s) and immediately place the B4b profit target after confirming the position. If the sequence cannot complete, the next run must detect `LONG_UNPROTECTED` and place it.
+3. Any BTC buy order found resting on the book (leftover or manual) is cancelled first.
+4. After a target fills, the sleeve is flat again and re-enters on the next run if still bullish (via B5c sweep → B5b, or directly from cash if the sweep has not happened yet — don't round-trip through USDG within a single run).
 
 #### B5c. USDG cash sweep
 
@@ -375,7 +366,7 @@ Before every order:
 3. Confirm all of the following from the review:
    - asset is BTC for directional orders or USDG for the explicit parking conversions in B5;
    - side and quantity match the intended action;
-   - order type is limit for BTC, market for USDG;
+   - order type is market for BTC buys and USDG, limit for BTC sells;
    - limit price and time in force are correct;
    - sell quantity does not exceed sellable BTC;
    - buy cost does not exceed `SLEEVE_FREE_CASH`;
@@ -389,11 +380,11 @@ Before every order:
 - BTC is the only directional asset; USDG is the only parking asset; long or flat only in each.
 - At most one BTC position and one BTC order at a time, except transiently while a cancellation is being confirmed.
 - Never average down, add to a position, pyramid, short BTC, use leverage, or borrow.
-- BTC: limit orders only. USDG: market orders only. Never use a stop-market, recurring, or dollar-cost-averaging order.
+- BTC buy: market, only when the trigger holds. BTC sell: limit only. USDG: market only. Never use a stop-market, recurring, or dollar-cost-averaging order.
 - Profit targets are always calculated from actual weighted-average entry fills, never from quotes or submitted limits.
 - The bearish regime is `SMA50 <= SMA200`; do not wait for a second crossover confirmation. A bearish regime blocks new entries and permits an early *profitable* exit; it never forces a loss.
 - Never calculate an SMA from an incomplete candle, and never from candles that failed the freshness check.
-- Candles are only ever used for indicators and HIGH_WATER; every price used to place, size, or check an order comes from Robinhood quotes.
+- Candles are only ever used for the SMA indicators; every price used to place, size, or check an order comes from Robinhood quotes.
 - Never infer a fill from price movement; confirm it from order status and position quantity.
 - Never count unrelated cash, deposits, rewards, transfers, or holdings as strategy capital.
 - Sweep idle BTC principal and realized profits into USDG, never SATA, BOXX, or another PARK asset.
@@ -412,7 +403,7 @@ Return two parts.
    - state and routing mode;
    - SMA50, SMA200, and bullish/bearish regime;
    - sleeve book equity, sleeve free cash, realized BTC P&L, BTC and USDG quantities, ENTRY, current bid/ask, and unrealized return;
-   - ANCHOR_TIME, HIGH_WATER, ENTRY_LIMIT when flat;
+   - regime and spread when flat;
    - TARGET_PX when holding;
    - every cancellation, review, placement, partial fill, and confirmed fill;
    - anything skipped or flagged.
