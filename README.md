@@ -1,8 +1,8 @@
 # Agentic Money Minter
 
-Rules-based trading instructions run by one scheduled Claude routine against a Robinhood agentic account.
+Rules-based trading instructions run by scheduled Claude routines against a Robinhood agentic account.
 
-**Routine setup:** one routine on this repository, cron `5,35 * * * *` (every 30 minutes, 24/7), prompt:
+**Routine setup:** two hourly routines on this repository, one at cron `5 * * * *` and one at cron `35 * * * *` (together every 30 minutes, 24/7), both with the prompt:
 
 > Follow all the rules in the repository, one after the other.
 
