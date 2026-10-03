@@ -1,6 +1,6 @@
 # Running the trading rules
 
-A scheduled routine triggers this repository with one line: **"Follow all the rules in the repository, one after the other."** When you get that instruction:
+Two scheduled routines trigger this repository with the same one line: **"Follow all the rules in the repository, one after the other."** When you get that instruction:
 
 1. Run each rule in `rules/` **in this order**, one at a time, to completion before starting the next:
    1. `rules/xlk-swing.md`
@@ -13,4 +13,4 @@ A scheduled routine triggers this repository with one line: **"Follow all the ru
 
 ## Schedule assumptions
 
-The rules assume the routine fires **every 30 minutes, 24/7, at a minute between :02 and :29 and again 30 minutes later** (recommended cron: `5,35 * * * *`). That guarantees one run inside each half-hour equity window (`AGGRESSIVE_EXIT`, `FINAL_RUN`) and that the newest hourly BTC candle has settled.
+Each routine schedule runs at most once per hour, so there are **two hourly routines with the same prompt**: one at minute **:05** (cron `5 * * * *`) and one at minute **:35** (cron `35 * * * *`), 24/7. Together they give one run every 30 minutes, which the rules rely on: one run inside each half-hour equity window (`AGGRESSIVE_EXIT`, `FINAL_RUN`), and every run starts after minute :02 so the newest hourly BTC candle has settled. The two runs are 30 minutes apart, so they never overlap; do not schedule either routine on another minute.
