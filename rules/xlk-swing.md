@@ -1,24 +1,15 @@
 # XLK swing (XLK/SATA; VGT/BOXX in December)
 
-Schedule: **two routines on this one prompt, NYSE weekdays** — at minutes **:15** and **:45**, 6 AM–12 PM PT (cron `CRON_TZ=America/Los_Angeles 15,45 6-12 * * 1-5`). The session flags below decide what each run does; a run outside the equity window (e.g. 6:15, holidays) reports and stops. Effective behaviour:
-- Full NYSE trading days: runs at 6:45, 7:15 … 12:45 PM PT (entries 7:00–12:00; 12:15 = aggressive exit; 12:45 = final run: sell if at/above breakeven, otherwise recovery and the only slot for selling a covered call).
-- Early-close days: 6:45–9:45 (entries until 9:00, aggressive exit at 9:15, final run 9:45).
-- The BTC/USDG rule (`btc-usdg.md`) runs 24/7 in the same account at :05 and :35; keep the two routines on different minutes so their orders never interleave.
-
----
-
-## Prompt
-
-You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. A separate routine runs a BTC/USDG sleeve in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
+You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. A separate rule (`btc-usdg.md`) runs a BTC/USDG sleeve in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
 ### Session flags — run first, every run
 
 1. Read the current time from your system context; convert to `America/Los_Angeles` (handle DST by zone, not fixed offset). Determine whether today is an NYSE trading day, and whether it is a full day or an early-close day (10:00 AM PT close).
-2. `EQUITY_WINDOW` = 6:30 AM–1:00 PM PT on a full NYSE trading day; 6:30–10:30 AM PT on an early-close day; false otherwise. If false → report `OUTSIDE_EQUITY_WINDOW` in one line and stop.
+2. `EQUITY_WINDOW` = 6:30 AM–1:00 PM PT on a full NYSE trading day; 6:30–10:30 AM PT on an early-close day; false otherwise. If false → report `OUTSIDE_EQUITY_WINDOW` in one line and stop (this rule only).
 3. Flags, all false outside `EQUITY_WINDOW`:
    - `MAY_ENTER` = 7:00 AM–12:00 PM PT (full day) / 7:00–9:00 AM PT (early close).
-   - `AGGRESSIVE_EXIT` = 12:00–12:29 PM PT (full day) / 9:00–9:29 AM PT (early close) — the 12:15 / 9:15 run.
-   - `FINAL_RUN` = 12:30–1:00 PM PT (full day) / 9:30–10:00 AM PT (early close) — the 12:45 / 9:45 run.
+   - `AGGRESSIVE_EXIT` = 12:00–12:29 PM PT (full day) / 9:00–9:29 AM PT (early close).
+   - `FINAL_RUN` = 12:30–1:00 PM PT (full day) / 9:30–10:00 AM PT (early close).
    - `MAY_CANCEL_TARGET` = `AGGRESSIVE_EXIT or FINAL_RUN` (kept as a name for the close-out rule).
    - `OPTIONS_ALLOWED` = `FINAL_RUN` — covered calls may be sold only on the final run of the day, and only if the lot is underwater (see E3b).
    - `CLOSE_OUT_DAY` = last NYSE trading day of November or December (2026: Mon Nov 30, Thu Dec 31).
@@ -41,7 +32,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
 - **Wash-sale guard (any month):** if the most recent closed TRADE lot in a ticker was sold at a stock loss, do not open a new lot in that ticker until 31 days after that sale date. Check via `get_equity_orders` / `get_pnl_trade_history`. This matters most for an XLK lot exiting at a loss in December, which delays the Jan 1 restart; while blocked, keep sweeping to PARK and report the unblock date.
 - `OTHER_TRADE` = the off-regime trade ticker. It counts toward state (a lot in it is the lot) but never receives a new entry or a covered call it doesn't already have.
 - **Cash parking follows the regime without a forced conversion.** Sweeps always buy the current `PARK`. When funding an entry, sell the current `PARK` first; if that is insufficient, sell the other park ETF (`OTHER_PARK`) for the remainder. Do not liquidate the whole off-regime park balance on the switch date — it simply stops receiving sweeps and gets drawn down as entries need funding.
-- **Regime close-out.** `CLOSE_OUT_DAY` = true on the **last NYSE trading day of November and of December** (2026: Mon Nov 30 and Thu Dec 31; in general the last weekday of the month that is not an exchange holiday — the day after Thanksgiving is an early-close trading day, not a holiday). Runs before the MAY_CANCEL_TARGET window behave normally that day. The **FINAL_RUN** (12:45) on a CLOSE_OUT_DAY performs a full close-out instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask and wait for the fill; (3) market-sell all 100 TRADE shares; (4) market-sell the entire PARK balance (fractional, full amount); (5) then run E4 with `PARK` set to **next month's** park ticker (Nov 30 → BOXX, Dec 31 → SATA). Do this even if the lot is in recovery and exits at a loss — the realized loss is intentional. Report every fill and the realized P&L on the closed lot.
+- **Regime close-out.** `CLOSE_OUT_DAY` = true on the **last NYSE trading day of November and of December** (2026: Mon Nov 30 and Thu Dec 31; in general the last weekday of the month that is not an exchange holiday — the day after Thanksgiving is an early-close trading day, not a holiday). Runs before the MAY_CANCEL_TARGET window behave normally that day. The **FINAL_RUN** on a CLOSE_OUT_DAY performs a full close-out instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask and wait for the fill; (3) market-sell all 100 TRADE shares; (4) market-sell the entire PARK balance (fractional, full amount); (5) then run E4 with `PARK` set to **next month's** park ticker (Nov 30 → BOXX, Dec 31 → SATA). Do this even if the lot is in recovery and exits at a loss — the realized loss is intentional. Report every fill and the realized P&L on the closed lot.
 - Everywhere below, `TRADE`, `PARK`, `OTHER_TRADE`, `OTHER_PARK` mean the tickers resolved here. Snapshot positions, quotes, tradability and order history for **all four** symbols every run.
 
 ### E0 — Establish context (every run)
@@ -55,7 +46,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
    - `Robinhood:get_option_positions` → any short TRADE calls (strike, expiry, quantity, premium received).
    - `Robinhood:get_equity_orders` and `Robinhood:get_option_orders` (open only) → pending orders for TRADE, PARK, or TRADE options. Also list today's **filled** TRADE orders (needed for state).
    - `Robinhood:get_portfolio` → `ACCOUNT_CASH = buying_power.unleveraged_buying_power`. This already includes usable unsettled proceeds; day trades are fine.
-   - **Crypto-sleeve exclusion.** A separate BTC/USDG routine owns its own capital in this account and trades 24/7, so its cash can sit in the account at any time (between fills and sweeps, or behind a resting BTC limit buy). `Robinhood:get_crypto_orders` → `CRYPTO_CASH` = (BTC + USDG sell proceeds) − (BTC + USDG buy costs) for all fills since `CRYPTO_SLEEVE_START_UTC = 2026-09-24T03:45:00Z`, floored at 0. `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH)`. This is deliberately conservative: if Robinhood already reserves buying power for an open crypto buy, the BTC cash is subtracted twice, which only leaves equity cash unused — never spends BTC money. Never trade, sweep, or count BTC or USDG; never let CASH include their proceeds. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
+   - **Crypto-sleeve exclusion.** The BTC/USDG rule owns its own capital in this account and trades 24/7, so its cash can sit in the account at any time (between fills and sweeps, or behind a resting BTC limit buy). `Robinhood:get_crypto_orders` → `CRYPTO_CASH` = (BTC + USDG sell proceeds) − (BTC + USDG buy costs) for all fills since `CRYPTO_SLEEVE_START_UTC = 2026-09-24T03:45:00Z`, floored at 0. `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH)`. This is deliberately conservative: if Robinhood already reserves buying power for an open crypto buy, the BTC cash is subtracted twice, which only leaves equity cash unused — never spends BTC money. Never trade, sweep, or count BTC or USDG; never let CASH include their proceeds. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
    - `Robinhood:get_equity_quotes` for all four symbols.
    - Ignore all other holdings (e.g. VTI, BTC, USDG; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
 4. Derive the state:
@@ -81,11 +72,11 @@ Do **all** that apply, in this order:
 - **RECOVERY** → run E3, then E4.
 - **OPEN_TODAY**:
   - Before 12:00 (neither `AGGRESSIVE_EXIT` nor `FINAL_RUN`): leave the DAY limit sell at `TARGET_PX` working. Do nothing with TRADE. Run E4 to sweep any leftover buffer, then report.
-  - `AGGRESSIVE_EXIT` (the 12:15 run / 9:15 early close) — **try to get out near breakeven, never below it:**
+  - `AGGRESSIVE_EXIT` — **try to get out near breakeven, never below it:**
     1. If the DAY limit filled since the snapshot → SOLD_TODAY.
     2. If `TRADE bid ≥ AGGRESSIVE_PX`: cancel the DAY limit, confirm cancelled, market-sell 100 TRADE, wait for fill → SOLD_TODAY, E4.
     3. Otherwise cancel the DAY limit at `TARGET_PX`, confirm cancelled, and place a new **DAY limit sell for 100 TRADE at `AGGRESSIVE_PX`**. Report both prices. Still OPEN_TODAY; E4.
-  - `FINAL_RUN` (the 12:45 run / 9:45 early close) — **last chance to avoid recovery:**
+  - `FINAL_RUN` — **last chance to avoid recovery:**
     1. If the working limit filled since the snapshot → SOLD_TODAY.
     2. If `TRADE bid ≥ BREAKEVEN_EQ`: cancel the working limit, confirm cancelled, market-sell 100 TRADE, wait for fill → SOLD_TODAY, E4. (A tiny profit beats a week in recovery.)
     3. Otherwise the lot is underwater: cancel the working limit, confirm cancelled. Position is now RECOVERY; run E3 (covered-call sale is permitted on this run), then E4.
@@ -103,7 +94,7 @@ Do **all** that apply, in this order:
 4. Poll `get_equity_orders` for the fill. If not filled within 3 minutes, cancel with `Robinhood:cancel_equity_order` and stop.
 5. Re-read CASH. Confirm `CASH ≥ 100 × TRADE ask` with no borrowing. Review then place a **market buy for exactly 100 TRADE**. If CASH covers fewer than 100 shares, place no TRADE order and report; the cash is swept at E4.
 6. Confirm the fill; record `ENTRY` (fill price).
-7. `TARGET_PX = ENTRY × 1.0015` rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before 12:00 must leave it alone; the 12:15 run replaces it with the aggressive price.) Report its order ID and price.
+7. `TARGET_PX = ENTRY × 1.0015` rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
 
 ### E3 — RECOVERY mode (any run)
 
