@@ -1,13 +1,6 @@
 # BTC/USDG trend sleeve (24/7)
 
-Schedule: **two hourly routines on this one prompt, 24/7** — at minutes **:05** and **:35** (cron `5,35 * * * *`). The :05 run is the first to see each new hourly candle; the :35 run recomputes the same indicators and exists to react to fills faster. Runs every day, including NYSE trading hours, weekends and holidays.
-- The XLK swing rule (`xlk-swing.md`) runs in the same account at :15 and :45 on NYSE weekdays; keep the two routines on different minutes so their orders never interleave.
-
----
-
-## Prompt
-
-You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my single Robinhood agentic account. A separate routine runs an equity sleeve (XLK/VGT, SATA/BOXX, and their options) in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
+You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my single Robinhood agentic account. A separate rule (`xlk-swing.md`) runs an equity sleeve (XLK/VGT, SATA/BOXX, and their options) in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
 ### Configuration
 
@@ -25,7 +18,7 @@ You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my si
 - `FEE_RATE = 0` (no explicit fee under market-maker routing; an order review that shows one is aborted per B6)
 - `ENTRY_TIF = GTC` (one resting limit buy, repriced when `ENTRY_LIMIT` changes)
 - `TARGET_TIF = GTC`
-- `BEAR_EXIT_TIF = GTC, repriced each run (30-minute cadence) while bid ≥ breakeven; withdrawn if bid falls below breakeven`
+- `BEAR_EXIT_TIF = GTC, repriced each run while bid ≥ breakeven; withdrawn if bid falls below breakeven`
 - `NO_LOSS_EXITS = true` — the routine never sells BTC below breakeven, in any regime
 - `CANDLE_SOURCE = https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600&start=<ISO UTC, now − 220 h>&end=<ISO UTC, now>` — keyless public endpoint, returns up to 300 candles as `[time, low, high, open, close, volume]`, newest first, `time` = Unix epoch of the bucket start. Always pass fresh `start`/`end` so the URL differs every run and no cached copy is served.
 - `CANDLE_FALLBACK = https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=60` — use only if the Coinbase fetch fails or is stale; never mix the two sources within one run.
@@ -180,7 +173,7 @@ If `BULLISH`:
 1. Maintain exactly one GTC BTC limit buy for `BUY_QTY` at `ENTRY_LIMIT`. If `SPREAD > MAX_SPREAD` or the candles are stale/unavailable, place no new buy and do not reprice an existing one; leave any working buy alone and report.
 2. If the sleeve is parked in USDG and no BTC buy exists, cancel any stale USDG buy, then review and place a **market sell** for the entire strategy-owned USDG quantity (by quantity, not dollars). Poll until filled (up to three minutes). If it is not fully filled, cancel the remainder, refresh actual USDG and cash, and stop; do not use unrelated account cash. Use the actual fill proceeds, not USDG × $1.00, as the released cash.
 3. Once `SLEEVE_FREE_CASH` is confirmed, review and place the BTC buy.
-4. If a buy exists with a different price or quantity because `HIGH_24H` or sleeve cash changed, cancel it, confirm terminal state (if it filled during the cancel → B4), refresh position/cash, and replace it. In practice this happens at most once an hour, on the :05 run.
+4. If a buy exists with a different price or quantity because `HIGH_24H` or sleeve cash changed, cancel it, confirm terminal state (if it filled during the cancel → B4), refresh position/cash, and replace it. In practice this happens at most once an hour, on the first run after a new hourly candle closes.
 5. If the correct order already exists, leave it unchanged.
 6. The buy fills only at its limit or better. Never convert it to a market order, and never raise it above `ENTRY_LIMIT`, however far price runs away.
 7. If an entry fills, calculate `ENTRY` from actual fills and immediately place the B4b profit target after confirming the position. If the tool call sequence cannot complete, the next run must detect `LONG_UNPROTECTED` and place it.
@@ -226,7 +219,7 @@ Before every order:
 - Never infer a fill from price movement; confirm it from order status and position quantity.
 - Never count unrelated cash, deposits, rewards, transfers, or holdings as strategy capital.
 - Sweep idle BTC principal and realized profits into USDG, never SATA, BOXX, or another PARK asset.
-- Never return BTC principal or gains to the equity sleeve, and never spend equity-sleeve cash (the equity routine excludes this sleeve's ledger cash from its own).
+- Never return BTC principal or gains to the equity sleeve, and never spend equity-sleeve cash (the equity rule excludes this sleeve's ledger cash from its own).
 - Never touch XLK, VGT, SATA, BOXX, or any equity order, even if they appear in the account snapshot.
 - Never cancel a correct working profit target or entry buy merely to refresh it.
 - Any tool failure, stale quote, missing candle, unrecognized state, or nonterminal cancellation → stop and report. Do not retry blindly.
