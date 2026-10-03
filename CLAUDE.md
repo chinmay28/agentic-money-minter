@@ -10,9 +10,26 @@ Two scheduled routines trigger this repository with the same one line: **"Follow
 4. Never mix the rules' variables. `ENTRY`, `TARGET_PX`, `FLAT`, `INVALID`, etc. mean the equity sleeve inside `xlk-swing.md` and the BTC sleeve inside `btc-usdg.md`.
 5. Do not edit, commit or push anything in this repository during a run (temporary files go outside it).
 6. Finish with each rule's report, in the same order, under a heading per rule.
-7. **Send the reports to Telegram, every run.** Write the complete output from step 6 (both headings, prose and JSON) to a temporary file outside the repository, e.g. `f=$(mktemp)`, and run `scripts/telegram-send.sh < "$f"`. Send even when a rule did nothing this run. The script reads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from the environment and splits long reports into several messages.
+7. **Send a short summary to Telegram, every run.** The full reports from step 6 stay in the run output; Telegram gets only a human-readable summary — **no JSON, no order IDs, no markdown**. Write it to a temporary file outside the repository, e.g. `f=$(mktemp)`, and run `scripts/telegram-send.sh < "$f"`. Send even when a rule did nothing this run.
+
+   Format — one block per rule, in run order, separated by a blank line; at most ~6 lines per block; times in PT; prices rounded to whole dollars for BTC and cents for stocks; percentages to one decimal:
+
+   ```
+   XLK · 3:53 PM PT Sat Oct 3
+   Market closed (weekend). No orders.
+
+   BTC · 3:53 PM PT Sat Oct 3
+   Holding 0.01096 BTC @ $87,261 → target $87,697 (working)
+   Bid $84,012 · unrealized −3.7% (−$35.61)
+   Bullish: SMA50 $85,071 > SMA200 $84,173
+   Sleeve $966.19 · realized P&L −$34.81
+   No orders placed or cancelled.
+   ```
+
+   - First line of each block: rule name (`XLK`, `BTC`) and run time. Then, as applicable: what is held and the working exit; current price and unrealized P&L; regime or entry status (e.g. `Flat · buy resting @ $84,170 (1% below 24h high $85,022)`); sleeve value and realized P&L; and one line listing every fill, placement and cancellation this run, or `No orders placed or cancelled.`
+   - Anything flagged (INVALID, INVALID_LEDGER, STALE_CANDLES, SPREAD_TOO_WIDE, NO_CHASE_BLOCKED, LONG_UNPROTECTED, a tool failure, …) goes on its own line starting with `⚠️`, as the first line after the header.
    - Sending happens only after both rules have finished. It never changes, delays or retries any trading step.
-   - If the script exits non-zero (variables missing, network blocked, Telegram error), do not retry; add one line `TELEGRAM_NOT_SENT: <the script's error message>` at the end of the output.
+   - If the script exits non-zero (variables missing, network blocked, Telegram error), do not retry; add one line `TELEGRAM_NOT_SENT: <the script's error message>` at the end of the run output.
    - Never print, echo or log the token, and never put it in a command line you show.
 
 ## Schedule assumptions
