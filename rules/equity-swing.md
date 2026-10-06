@@ -77,7 +77,7 @@ Do **all** that apply, in this order:
 - **FLAT** (or SOLD_TODAY):
   - If `MAY_ENTER` is false, or a TQQQ or XLK buy order is currently open → no entry. E4, report.
   - Resolve the trend gate (Tickers section) to choose `TRADE` = TQQQ or XLK, and report QQQ, `SMA200_QQQ`, VIX and the choice.
-  - **No-chase filter (entries at or after 11:00 AM PT only):** call `Robinhood:get_equity_historicals` for TRADE, interval `5minute`, bounds `regular`, covering the last 35 minutes. `MOVE_30 = (current TRADE ask / open of the bar that started ~30 minutes ago) − 1`. If `MOVE_30 > 0.50%`, skip the entry, report `NO_CHASE_BLOCKED` with the two prices, and run E4. If the bars are unavailable, skip the entry (fail closed) and say so. Entries before 11:00 are not subject to this filter.
+  - **No-chase filter (entries at or after 11:00 AM PT only):** call `Robinhood:get_equity_historicals` for TRADE, interval `5minute`, bounds `regular`, covering the last 35 minutes. `MOVE_30 = (current TRADE ask / open of the bar that started ~30 minutes ago) − 1`. If `MOVE_30 > CHASE_LIMIT` — **1.00% for TQQQ, 0.50% for XLK** (by the ticker the gate chose) — skip the entry, report `NO_CHASE_BLOCKED` with the two prices, and run E4. If the bars are unavailable, skip the entry (fail closed) and say so. Entries before 11:00 are not subject to this filter.
   - Otherwise open a new position (E2), then E4. Any number of round trips per day is fine; only one TRADE position may exist at a time, and no entry after 12:00 PM PT.
 
 ### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only, and not NO_CHASE_BLOCKED; TRADE as chosen by the trend gate)
