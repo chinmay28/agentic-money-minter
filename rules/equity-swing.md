@@ -88,7 +88,7 @@ Do **all** that apply, in this order:
 4. Poll `get_equity_orders` for the fill. If not filled within 3 minutes, cancel with `Robinhood:cancel_equity_order` and stop.
 5. Re-read CASH. Confirm `CASH ≥ 100 × TRADE ask` with no borrowing. Review then place a **market buy for exactly 100 TRADE**. If CASH covers fewer than 100 shares, place no TRADE order and report; the cash is swept at E4.
 6. Confirm the fill; record `ENTRY` (fill price).
-7. `TARGET_PX = ENTRY × 1.0070` (+0.70%, same for TQQQ and XLK) rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
+7. `TARGET_PX = ENTRY × (1 + TARGET_PCT)` rounded **up** to the cent, where `TARGET_PCT` = **0.70%** for TQQQ and **0.15%** for XLK (by the ticker actually bought). Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
 
 ### E3 — RECOVERY mode (any run)
 
