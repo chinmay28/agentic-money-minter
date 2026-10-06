@@ -1,6 +1,6 @@
 # XLK swing (XLK/SATA; VGT/BOXX in December)
 
-You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. A separate rule (`btc-usdg.md`) runs a BTC/USDG sleeve in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
+You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. Two other rules share the account: `btc-usdg.md` runs a BTC/USDG sleeve, and `tqqq-trend.md` runs a TQQQ/SATA sleeve that owns part of the account's SATA. Never trade, count or spend their holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
 ### Session flags — run first, every run
 
@@ -32,7 +32,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
 - **Wash-sale guard (any month):** if the most recent closed TRADE lot in a ticker was sold at a stock loss, do not open a new lot in that ticker until 31 days after that sale date. Check via `get_equity_orders` / `get_pnl_trade_history`. This matters most for an XLK lot exiting at a loss in December, which delays the Jan 1 restart; while blocked, keep sweeping to PARK and report the unblock date.
 - `OTHER_TRADE` = the off-regime trade ticker. It counts toward state (a lot in it is the lot) but never receives a new entry or a covered call it doesn't already have.
 - **Cash parking follows the regime without a forced conversion.** Sweeps always buy the current `PARK`. When funding an entry, sell the current `PARK` first; if that is insufficient, sell the other park ETF (`OTHER_PARK`) for the remainder. Do not liquidate the whole off-regime park balance on the switch date — it simply stops receiving sweeps and gets drawn down as entries need funding.
-- **Regime close-out.** `CLOSE_OUT_DAY` = true on the **last NYSE trading day of November and of December** (2026: Mon Nov 30 and Thu Dec 31; in general the last weekday of the month that is not an exchange holiday — the day after Thanksgiving is an early-close trading day, not a holiday). Runs before the MAY_CANCEL_TARGET window behave normally that day. The **FINAL_RUN** on a CLOSE_OUT_DAY performs a full close-out instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask and wait for the fill; (3) market-sell all 100 TRADE shares; (4) market-sell the entire PARK balance (fractional, full amount); (5) then run E4 with `PARK` set to **next month's** park ticker (Nov 30 → BOXX, Dec 31 → SATA). Do this even if the lot is in recovery and exits at a loss — the realized loss is intentional. Report every fill and the realized P&L on the closed lot.
+- **Regime close-out.** `CLOSE_OUT_DAY` = true on the **last NYSE trading day of November and of December** (2026: Mon Nov 30 and Thu Dec 31; in general the last weekday of the month that is not an exchange holiday — the day after Thanksgiving is an early-close trading day, not a holiday). Runs before the MAY_CANCEL_TARGET window behave normally that day. The **FINAL_RUN** on a CLOSE_OUT_DAY performs a full close-out instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask and wait for the fill; (3) market-sell all 100 TRADE shares; (4) market-sell this sleeve's entire PARK balance (fractional, full amount; for SATA that is `XLK_SATA_QTY`, never the TQQQ sleeve's shares); (5) then run E4 with `PARK` set to **next month's** park ticker (Nov 30 → BOXX, Dec 31 → SATA). Do this even if the lot is in recovery and exits at a loss — the realized loss is intentional. Report every fill and the realized P&L on the closed lot.
 - Everywhere below, `TRADE`, `PARK`, `OTHER_TRADE`, `OTHER_PARK` mean the tickers resolved here. Snapshot positions, quotes, tradability and order history for **all four** symbols every run.
 
 ### E0 — Establish context (every run)
@@ -47,8 +47,11 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
    - `Robinhood:get_equity_orders` and `Robinhood:get_option_orders` (open only) → pending orders for TRADE, PARK, or TRADE options. Also list today's **filled** TRADE orders (needed for state).
    - `Robinhood:get_portfolio` → `ACCOUNT_CASH = buying_power.unleveraged_buying_power`. This already includes usable unsettled proceeds; day trades are fine.
    - **Crypto-sleeve exclusion.** The BTC/USDG rule owns its own capital in this account and trades 24/7, so its cash can sit in the account at any time (between fills and sweeps, or behind a resting BTC limit buy). `Robinhood:get_crypto_orders` → `CRYPTO_CASH` = (BTC + USDG sell proceeds) − (BTC + USDG buy costs) for all fills since `CRYPTO_SLEEVE_START_UTC = 2026-09-24T03:45:00Z`, floored at 0. `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH)`. This is deliberately conservative: if Robinhood already reserves buying power for an open crypto buy, the BTC cash is subtracted twice, which only leaves equity cash unused — never spends BTC money. Never trade, sweep, or count BTC or USDG; never let CASH include their proceeds. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
+   - **TQQQ-sleeve exclusion.** `tqqq-trend.md` owns $5,000 carved out of this sleeve's SATA on `TQ_START_UTC = 2026-10-06T13:00:00Z`, and it parks in SATA too. From `Robinhood:get_equity_orders` for TQQQ and SATA since `TQ_START_UTC`, compute `TQ_SATA_QTY` and `TQ_CASH` exactly as `tqqq-trend.md` § "Sleeve ledger — the shared contract" defines them (TQQQ fills plus SATA orders whose `ref_id` starts with `5a7a7099-`; 50 starting SATA shares). Then:
+     - `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH − max(0, TQ_CASH))`.
+     - `XLK_SATA_QTY = SATA quantity − TQ_SATA_QTY`. Wherever this rule says PARK or OTHER_PARK and the ticker is SATA, its quantity, value and "balance" mean `XLK_SATA_QTY`, never the full SATA position. If `XLK_SATA_QTY < 0` → INVALID.
    - `Robinhood:get_equity_quotes` for all four symbols.
-   - Ignore all other holdings (e.g. VTI, BTC, USDG; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
+   - Ignore all other holdings (e.g. VTI, TQQQ, BTC, USDG, and the TQQQ sleeve's SATA; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
 4. Derive the state:
    - **FLAT**: TRADE = 0, no TRADE options, no TRADE sell filled today.
    - **SOLD_TODAY**: TRADE = 0, no TRADE options, a 100-share TRADE sell filled today. Proceeds need sweeping.
@@ -60,6 +63,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
 
 - PARK (and OTHER_PARK) are traded **fractionally, by dollar amount** (notional), so idle cash is never left behind. Use the notional / dollar-amount parameter of `review_equity_order` → `place_equity_order` if the tool supports it; otherwise use fractional share quantity rounded **down** to 6 decimals.
 - Fractional orders must be **market** orders during regular hours (Robinhood's rule). Minimum order $1.00.
+- Never give an order a `ref_id` starting with `5a7a7099-`: that tag marks the TQQQ sleeve's SATA orders.
 - Sweep threshold: sweep whenever `CASH ≥ $5`. Leave at most $5 idle.
 
 ### E1 — Act on the state (every run)
@@ -90,7 +94,7 @@ Do **all** that apply, in this order:
 
 1. `TRADE_COST = 100 × TRADE ask × 1.003` (0.3% buffer for price drift).
 2. `SHORTFALL = TRADE_COST − CASH`. If ≤ 0, skip the PARK sale.
-3. Otherwise sell **exactly `SHORTFALL` dollars of PARK** (fractional, market); if PARK's value is less than SHORTFALL, sell all of it and the remainder from OTHER_PARK. Review, then place. Never sell more than SHORTFALL in total.
+3. Otherwise sell **exactly `SHORTFALL` dollars of PARK** (fractional, market); if this sleeve's PARK value (`XLK_SATA_QTY` × bid when PARK is SATA) is less than SHORTFALL, sell all of it and the remainder from OTHER_PARK. Review, then place. Never sell more than SHORTFALL in total.
 4. Poll `get_equity_orders` for the fill. If not filled within 3 minutes, cancel with `Robinhood:cancel_equity_order` and stop.
 5. Re-read CASH. Confirm `CASH ≥ 100 × TRADE ask` with no borrowing. Review then place a **market buy for exactly 100 TRADE**. If CASH covers fewer than 100 shares, place no TRADE order and report; the cash is swept at E4.
 6. Confirm the fill; record `ENTRY` (fill price).
@@ -146,6 +150,7 @@ Before placing any order that costs cash — most often buying to close a short 
 - Always `review_*_order` before `place_*_order`; abort if the review shows borrowing, a different quantity/notional, or an unexpected estimated cost.
 - Options: limit only. Stock: market only, and only when open and tradable.
 - Never trade BTC, USDG or any crypto, and never cancel a crypto order, even if they appear in the account snapshot.
+- Never trade TQQQ, never sell or count the TQQQ sleeve's SATA (`TQ_SATA_QTY`), and never cancel a TQQQ order or a SATA order tagged `5a7a7099-`.
 - Any tool failure or unrecognised result → stop and report; do not retry blindly.
 
 ---
@@ -154,5 +159,5 @@ Before placing any order that costs cash — most often buying to close a short 
 
 **All times in the report are Pacific Time** (`America/Los_Angeles`, e.g. "8:45 AM PT Wed Sep 23"). Never show UTC in prose.
 
-1. Prose, a few lines: PT time, flags, state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH` excluded), anything skipped or flagged.
-2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","crypto_cash_excluded","short_call","open_orders","combined","target","exit_px","orders_placed","flags"}`.
+1. Prose, a few lines: PT time, flags, state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH`, `TQ_CASH` and `TQ_SATA_QTY` excluded), anything skipped or flagged.
+2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","crypto_cash_excluded","tq_cash_excluded","tq_sata_excluded","short_call","open_orders","combined","target","exit_px","orders_placed","flags"}`.
