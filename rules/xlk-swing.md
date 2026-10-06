@@ -1,6 +1,6 @@
 # XLK swing (XLK/SATA; VGT/BOXX in December)
 
-You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. Two other rules share the account: `btc-usdg.md` runs a BTC/USDG sleeve, and `tqqq-trend.md` runs a TQQQ/SATA sleeve that owns part of the account's SATA. Never trade, count or spend their holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
+You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. Two other rules share the account: `btc-usdg.md` runs a BTC/USDG sleeve, and `tqqq-trend.md` runs a TQQQ/GLD/SATA sleeve that owns all TQQQ and GLD and part of the account's SATA. Never trade, count or spend their holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
 ### Session flags — run first, every run
 
@@ -47,11 +47,11 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
    - `Robinhood:get_equity_orders` and `Robinhood:get_option_orders` (open only) → pending orders for TRADE, PARK, or TRADE options. Also list today's **filled** TRADE orders (needed for state).
    - `Robinhood:get_portfolio` → `ACCOUNT_CASH = buying_power.unleveraged_buying_power`. This already includes usable unsettled proceeds; day trades are fine.
    - **Crypto-sleeve exclusion.** The BTC/USDG rule owns its own capital in this account and trades 24/7, so its cash can sit in the account at any time (between fills and sweeps, or behind a resting BTC limit buy). `Robinhood:get_crypto_orders` → `CRYPTO_CASH` = (BTC + USDG sell proceeds) − (BTC + USDG buy costs) for all fills since `CRYPTO_SLEEVE_START_UTC = 2026-09-24T03:45:00Z`, floored at 0. `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH)`. This is deliberately conservative: if Robinhood already reserves buying power for an open crypto buy, the BTC cash is subtracted twice, which only leaves equity cash unused — never spends BTC money. Never trade, sweep, or count BTC or USDG; never let CASH include their proceeds. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
-   - **TQQQ-sleeve exclusion.** `tqqq-trend.md` owns $5,000 carved out of this sleeve's SATA on `TQ_START_UTC = 2026-10-06T13:00:00Z`, and it parks in SATA too. From `Robinhood:get_equity_orders` for TQQQ and SATA since `TQ_START_UTC`, compute `TQ_SATA_QTY` and `TQ_CASH` exactly as `tqqq-trend.md` § "Sleeve ledger — the shared contract" defines them (TQQQ fills plus SATA orders whose `ref_id` starts with `5a7a7099-`; 50 starting SATA shares). Then:
+   - **TQQQ-sleeve exclusion.** `tqqq-trend.md` owns $5,000 carved out of this sleeve's SATA on `TQ_START_UTC = 2026-10-06T13:00:00Z`, and it parks in SATA too. From `Robinhood:get_equity_orders` for TQQQ, GLD and SATA since `TQ_START_UTC`, compute `TQ_SATA_QTY` and `TQ_CASH` exactly as `tqqq-trend.md` § "Sleeve ledger — the shared contract" defines them (TQQQ and GLD fills plus SATA orders whose `ref_id` starts with `5a7a7099-`; 50 starting SATA shares). Then:
      - `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH − max(0, TQ_CASH))`.
      - `XLK_SATA_QTY = SATA quantity − TQ_SATA_QTY`. Wherever this rule says PARK or OTHER_PARK and the ticker is SATA, its quantity, value and "balance" mean `XLK_SATA_QTY`, never the full SATA position. If `XLK_SATA_QTY < 0` → INVALID.
    - `Robinhood:get_equity_quotes` for all four symbols.
-   - Ignore all other holdings (e.g. VTI, TQQQ, BTC, USDG, and the TQQQ sleeve's SATA; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
+   - Ignore all other holdings (e.g. VTI, TQQQ, GLD, BTC, USDG, and the TQQQ sleeve's SATA; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
 4. Derive the state:
    - **FLAT**: TRADE = 0, no TRADE options, no TRADE sell filled today.
    - **SOLD_TODAY**: TRADE = 0, no TRADE options, a 100-share TRADE sell filled today. Proceeds need sweeping.
@@ -150,7 +150,7 @@ Before placing any order that costs cash — most often buying to close a short 
 - Always `review_*_order` before `place_*_order`; abort if the review shows borrowing, a different quantity/notional, or an unexpected estimated cost.
 - Options: limit only. Stock: market only, and only when open and tradable.
 - Never trade BTC, USDG or any crypto, and never cancel a crypto order, even if they appear in the account snapshot.
-- Never trade TQQQ, never sell or count the TQQQ sleeve's SATA (`TQ_SATA_QTY`), and never cancel a TQQQ order or a SATA order tagged `5a7a7099-`.
+- Never trade TQQQ or GLD, never sell or count the TQQQ sleeve's SATA (`TQ_SATA_QTY`), and never cancel a TQQQ or GLD order or a SATA order tagged `5a7a7099-`.
 - Any tool failure or unrecognised result → stop and report; do not retry blindly.
 
 ---
