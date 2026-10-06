@@ -20,5 +20,5 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 
 | Order | Rule | Active | Summary |
 |---|---|---|---|
-| 1 | [tqqq-swing](rules/tqqq-swing.md) | NYSE hours (6:30 AM–1:00 PM PT) | 100-share TQQQ swing parked in SATA (VGT/BOXX in December): entries only while VIX > 16, +0.60% intraday target, covered-call recovery and year-end close-out |
+| 1 | [tqqq-swing](rules/tqqq-swing.md) | NYSE hours (6:30 AM–1:00 PM PT) | 100-share TQQQ swing parked in SATA, year-round: entries only while VIX > 16, +0.60% intraday target, covered-call recovery |
 | 2 | [btc-usdg](rules/btc-usdg.md) | 24/7 | BTC trend sleeve parked in USDG: limit buy 1% below the 24-hour high while SMA50 > SMA200, +0.5% target, no-loss exits |

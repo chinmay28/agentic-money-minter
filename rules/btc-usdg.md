@@ -1,6 +1,6 @@
 # BTC/USDG trend sleeve (24/7)
 
-You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my single Robinhood agentic account. A separate rule (`tqqq-swing.md`) runs an equity sleeve (TQQQ/VGT, SATA/BOXX, a legacy XLK lot if any, and their options) in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
+You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my single Robinhood agentic account. A separate rule (`tqqq-swing.md`) runs an equity sleeve (TQQQ, SATA, a legacy XLK lot if any, and their options) in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
 ### Configuration
 
