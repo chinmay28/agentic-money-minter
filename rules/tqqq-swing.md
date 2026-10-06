@@ -1,4 +1,4 @@
-# XLK swing (XLK/SATA; VGT/BOXX in December)
+# TQQQ swing (TQQQ/SATA; VGT/BOXX in December)
 
 You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. A separate rule (`btc-usdg.md`) runs a BTC/USDG sleeve in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
@@ -7,7 +7,8 @@ You are executing a rules-based equity sleeve in my single Robinhood agentic acc
 1. Read the current time from your system context; convert to `America/Los_Angeles` (handle DST by zone, not fixed offset). Determine whether today is an NYSE trading day, and whether it is a full day or an early-close day (10:00 AM PT close).
 2. `EQUITY_WINDOW` = 6:30 AM–1:00 PM PT on a full NYSE trading day; 6:30–10:30 AM PT on an early-close day; false otherwise. If false → report `OUTSIDE_EQUITY_WINDOW` in one line and stop (this rule only).
 3. Flags, all false outside `EQUITY_WINDOW`:
-   - `MAY_ENTER` = 7:00 AM–12:00 PM PT (full day) / 7:00–9:00 AM PT (early close).
+   - `MAY_ENTER` = 7:00 AM–12:00 PM PT (full day) / 7:00–9:00 AM PT (early close), **and** `VIX_OK` (below).
+   - `VIX_OK` = the latest VIX index level is **strictly above 16.00**. Read it with `Robinhood:get_index_quotes` for `VIX` (use `Robinhood:get_indexes` / `Robinhood:search` to resolve the symbol if needed). If the quote is unavailable, stale (older than 15 minutes during `EQUITY_WINDOW`) or unrecognised, `VIX_OK` = false (fail closed) and say so. Only computed when the time-of-day part of `MAY_ENTER` is true; otherwise report it as not checked. The VIX gate blocks **new entries only** — exits, the aggressive/final close-out, recovery, covered calls, the regime close-out and sweeps all run regardless of VIX, so an open lot is never stranded by a low VIX.
    - `AGGRESSIVE_EXIT` = 12:00–12:29 PM PT (full day) / 9:00–9:29 AM PT (early close).
    - `FINAL_RUN` = 12:30–1:00 PM PT (full day) / 9:30–10:00 AM PT (early close).
    - `MAY_CANCEL_TARGET` = `AGGRESSIVE_EXIT or FINAL_RUN` (kept as a name for the close-out rule).
@@ -23,14 +24,15 @@ Two tickers are in play at any time: `TRADE` (the 100-share swing ETF) and `PARK
 
 | Months | TRADE | PARK |
 |---|---|---|
-| January–November | XLK | SATA |
+| January–November | TQQQ | SATA |
 | December | VGT | BOXX |
 
 The switch exists to avoid year-end wash-sale complications, so the boundaries are hard:
-- **Never open a new position in the off-regime TRADE ticker.** From Dec 1 all new entries are VGT; from Jan 1 all new entries are XLK.
-- **An open lot carries over (fallback only — the close-out below should prevent this).** If 100 XLK (with or without a short call) is still in recovery on Dec 1, keep managing it under the recovery rules with XLK as `TRADE` until it is closed; only after that do new entries use VGT. Same for a VGT lot on Jan 1. Never hold lots in both tickers at once.
-- **Wash-sale guard (any month):** if the most recent closed TRADE lot in a ticker was sold at a stock loss, do not open a new lot in that ticker until 31 days after that sale date. Check via `get_equity_orders` / `get_pnl_trade_history`. This matters most for an XLK lot exiting at a loss in December, which delays the Jan 1 restart; while blocked, keep sweeping to PARK and report the unblock date.
+- **Never open a new position in the off-regime TRADE ticker.** From Dec 1 all new entries are VGT; from Jan 1 all new entries are TQQQ.
+- **An open lot carries over (fallback only — the close-out below should prevent this).** If 100 TQQQ (with or without a short call) is still in recovery on Dec 1, keep managing it under the recovery rules with TQQQ as `TRADE` until it is closed; only after that do new entries use VGT. Same for a VGT lot on Jan 1. Never hold lots in both tickers at once.
+- **Wash-sale guard (any month):** if the most recent closed TRADE lot in a ticker was sold at a stock loss, do not open a new lot in that ticker until 31 days after that sale date. Check via `get_equity_orders` / `get_pnl_trade_history`. This matters most for a TQQQ lot exiting at a loss in December, which delays the Jan 1 restart; while blocked, keep sweeping to PARK and report the unblock date.
 - `OTHER_TRADE` = the off-regime trade ticker. It counts toward state (a lot in it is the lot) but never receives a new entry or a covered call it doesn't already have.
+- **Legacy XLK lot (transition from the old XLK/SATA pair).** XLK is never entered again. If the account holds a 100-share XLK lot (with or without a short XLK call), treat XLK as `OTHER_TRADE` under the carry-over rule above: it is the lot, managed as OPEN_TODAY or RECOVERY (E1/E3) with its own `ENTRY` until it is closed, and only then do new entries use TQQQ. Snapshot XLK alongside the four symbols while it is held or has open orders. Never hold an XLK lot and a TQQQ/VGT lot at once.
 - **Cash parking follows the regime without a forced conversion.** Sweeps always buy the current `PARK`. When funding an entry, sell the current `PARK` first; if that is insufficient, sell the other park ETF (`OTHER_PARK`) for the remainder. Do not liquidate the whole off-regime park balance on the switch date — it simply stops receiving sweeps and gets drawn down as entries need funding.
 - **Regime close-out.** `CLOSE_OUT_DAY` = true on the **last NYSE trading day of November and of December** (2026: Mon Nov 30 and Thu Dec 31; in general the last weekday of the month that is not an exchange holiday — the day after Thanksgiving is an early-close trading day, not a holiday). Runs before the MAY_CANCEL_TARGET window behave normally that day. The **FINAL_RUN** on a CLOSE_OUT_DAY performs a full close-out instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask and wait for the fill; (3) market-sell all 100 TRADE shares; (4) market-sell the entire PARK balance (fractional, full amount); (5) then run E4 with `PARK` set to **next month's** park ticker (Nov 30 → BOXX, Dec 31 → SATA). Do this even if the lot is in recovery and exits at a loss — the realized loss is intentional. Report every fill and the realized P&L on the closed lot.
 - Everywhere below, `TRADE`, `PARK`, `OTHER_TRADE`, `OTHER_PARK` mean the tickers resolved here. Snapshot positions, quotes, tradability and order history for **all four** symbols every run.
@@ -48,7 +50,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
    - `Robinhood:get_portfolio` → `ACCOUNT_CASH = buying_power.unleveraged_buying_power`. This already includes usable unsettled proceeds; day trades are fine.
    - **Crypto-sleeve exclusion.** The BTC/USDG rule owns its own capital in this account and trades 24/7, so its cash can sit in the account at any time (between fills and sweeps, or behind a resting BTC limit buy). `Robinhood:get_crypto_orders` → `CRYPTO_CASH` = (BTC + USDG sell proceeds) − (BTC + USDG buy costs) for all fills since `CRYPTO_SLEEVE_START_UTC = 2026-09-24T03:45:00Z`, floored at 0. `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH)`. This is deliberately conservative: if Robinhood already reserves buying power for an open crypto buy, the BTC cash is subtracted twice, which only leaves equity cash unused — never spends BTC money. Never trade, sweep, or count BTC or USDG; never let CASH include their proceeds. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
    - `Robinhood:get_equity_quotes` for all four symbols.
-   - Ignore all other holdings (e.g. VTI, BTC, USDG; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
+   - Ignore all other holdings (e.g. VTI, BTC, USDG; the off-regime tickers and a legacy XLK lot are not "other holdings"): never trade them, never count them as capital.
 4. Derive the state:
    - **FLAT**: TRADE = 0, no TRADE options, no TRADE sell filled today.
    - **SOLD_TODAY**: TRADE = 0, no TRADE options, a 100-share TRADE sell filled today. Proceeds need sweeping.
@@ -82,11 +84,11 @@ Do **all** that apply, in this order:
     3. Otherwise the lot is underwater: cancel the working limit, confirm cancelled. Position is now RECOVERY; run E3 (covered-call sale is permitted on this run), then E4.
     4. If no limit sell exists at all (an earlier run died after the buy): apply steps 2–3 as written.
 - **FLAT** (or SOLD_TODAY):
-  - If `MAY_ENTER` is false, or a TRADE buy order is currently open → no TRADE entry. E4, report.
+  - If `MAY_ENTER` is false, or a TRADE buy order is currently open → no TRADE entry. E4, report. If the only reason is `VIX_OK` = false, report `VIX_LOW` with the VIX level (or `VIX_UNAVAILABLE`).
   - **No-chase filter (entries at or after 11:00 AM PT only):** call `Robinhood:get_equity_historicals` for TRADE, interval `5minute`, bounds `regular`, covering the last 35 minutes. `MOVE_30 = (current TRADE ask / open of the bar that started ~30 minutes ago) − 1`. If `MOVE_30 > 0.50%`, skip the entry, report `NO_CHASE_BLOCKED` with the two prices, and run E4. If the bars are unavailable, skip the entry (fail closed) and say so. Entries before 11:00 are not subject to this filter.
   - Otherwise open a new position (E2), then E4. Any number of round trips per day is fine; only one TRADE position may exist at a time, and no entry after 12:00 PM PT.
 
-### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only, and not NO_CHASE_BLOCKED)
+### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only — which includes VIX > 16 — and not NO_CHASE_BLOCKED)
 
 1. `TRADE_COST = 100 × TRADE ask × 1.003` (0.3% buffer for price drift).
 2. `SHORTFALL = TRADE_COST − CASH`. If ≤ 0, skip the PARK sale.
@@ -94,7 +96,7 @@ Do **all** that apply, in this order:
 4. Poll `get_equity_orders` for the fill. If not filled within 3 minutes, cancel with `Robinhood:cancel_equity_order` and stop.
 5. Re-read CASH. Confirm `CASH ≥ 100 × TRADE ask` with no borrowing. Review then place a **market buy for exactly 100 TRADE**. If CASH covers fewer than 100 shares, place no TRADE order and report; the cash is swept at E4.
 6. Confirm the fill; record `ENTRY` (fill price).
-7. `TARGET_PX = ENTRY × 1.0015` rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
+7. `TARGET_PX = ENTRY × 1.0060` (+0.60%) rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
 
 ### E3 — RECOVERY mode (any run)
 
@@ -136,7 +138,7 @@ Runs at the end of **every** run, whatever the state or time. Re-read CASH. If `
 
 ### Funding a debit (call buyback or any other cash outlay)
 
-Before placing any order that costs cash — most often buying to close a short call in E3a — check `CASH` against the order's estimated cost from the review (including fees). If `CASH` is short: sell **exactly the shortfall plus $1** of `PARK` (fractional, market; then `OTHER_PARK` if PARK is insufficient), wait for the fill, re-read `CASH`, and only then place the debit order. Never borrow to fund a buyback, never skip the buyback for lack of cash, and never sell the XLK/VGT shares to fund it (that would strand a naked call). Any residual after the debit is swept under E4 as usual (below the $5 threshold it simply stays in cash).
+Before placing any order that costs cash — most often buying to close a short call in E3a — check `CASH` against the order's estimated cost from the review (including fees). If `CASH` is short: sell **exactly the shortfall plus $1** of `PARK` (fractional, market; then `OTHER_PARK` if PARK is insufficient), wait for the fill, re-read `CASH`, and only then place the debit order. Never borrow to fund a buyback, never skip the buyback for lack of cash, and never sell the TRADE shares to fund it (that would strand a naked call). Any residual after the debit is swept under E4 as usual (below the $5 threshold it simply stays in cash).
 
 ### Equity hard rules — check before EVERY equity order
 
@@ -154,5 +156,5 @@ Before placing any order that costs cash — most often buying to close a short 
 
 **All times in the report are Pacific Time** (`America/Los_Angeles`, e.g. "8:45 AM PT Wed Sep 23"). Never show UTC in prose.
 
-1. Prose, a few lines: PT time, flags, state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH` excluded), anything skipped or flagged.
-2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","crypto_cash_excluded","short_call","open_orders","combined","target","exit_px","orders_placed","flags"}`.
+1. Prose, a few lines: PT time, flags (including the VIX level and `VIX_OK`), state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH` excluded), anything skipped or flagged.
+2. One fenced JSON object: `{"date","time_pt","vix","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","crypto_cash_excluded","short_call","open_orders","combined","target","exit_px","orders_placed","flags"}`.

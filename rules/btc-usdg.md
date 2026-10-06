@@ -1,6 +1,6 @@
 # BTC/USDG trend sleeve (24/7)
 
-You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my single Robinhood agentic account. A separate rule (`xlk-swing.md`) runs an equity sleeve (XLK/VGT, SATA/BOXX, and their options) in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
+You are executing a rules-based Bitcoin sleeve with cash parked in USDG in my single Robinhood agentic account. A separate rule (`tqqq-swing.md`) runs an equity sleeve (TQQQ/VGT, SATA/BOXX, a legacy XLK lot if any, and their options) in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
 ### Configuration
 
@@ -220,7 +220,7 @@ Before every order:
 - Never count unrelated cash, deposits, rewards, transfers, or holdings as strategy capital.
 - Sweep idle BTC principal and realized profits into USDG, never SATA, BOXX, or another PARK asset.
 - Never return BTC principal or gains to the equity sleeve, and never spend equity-sleeve cash (the equity rule excludes this sleeve's ledger cash from its own).
-- Never touch XLK, VGT, SATA, BOXX, or any equity order, even if they appear in the account snapshot.
+- Never touch TQQQ, XLK, VGT, SATA, BOXX, or any equity order, even if they appear in the account snapshot.
 - Never cancel a correct working profit target or entry buy merely to refresh it.
 - Any tool failure, stale quote, missing candle, unrecognized state, or nonterminal cancellation → stop and report. Do not retry blindly.
 
