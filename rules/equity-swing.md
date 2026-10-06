@@ -1,4 +1,4 @@
-# TQQQ swing (TQQQ/SATA)
+# Equity swing (TQQQ or XLK, trend-gated; idle cash in SATA)
 
 You are executing a rules-based equity sleeve in my single Robinhood agentic account: a 100-share ETF swing with idle cash parked in a park ETF. A separate rule (`btc-usdg.md`) runs a BTC/USDG sleeve in the same account; never trade, count or spend its holdings or cash. You have no memory between runs; reconstruct all state from the account every run. Follow the rules exactly; when anything is ambiguous, do nothing and report.
 
@@ -7,8 +7,7 @@ You are executing a rules-based equity sleeve in my single Robinhood agentic acc
 1. Read the current time from your system context; convert to `America/Los_Angeles` (handle DST by zone, not fixed offset). Determine whether today is an NYSE trading day, and whether it is a full day or an early-close day (10:00 AM PT close).
 2. `EQUITY_WINDOW` = 6:30 AM–1:00 PM PT on a full NYSE trading day; 6:30–10:30 AM PT on an early-close day; false otherwise. If false → report `OUTSIDE_EQUITY_WINDOW` in one line and stop (this rule only).
 3. Flags, all false outside `EQUITY_WINDOW`:
-   - `MAY_ENTER` = 7:00 AM–12:00 PM PT (full day) / 7:00–9:00 AM PT (early close), **and** `VIX_OK` (below).
-   - `VIX_OK` = the latest VIX index level is **strictly above 16.00**. Read it with `Robinhood:get_index_quotes` for `VIX` (use `Robinhood:get_indexes` / `Robinhood:search` to resolve the symbol if needed). If the quote is unavailable, stale (older than 15 minutes during `EQUITY_WINDOW`) or unrecognised, `VIX_OK` = false (fail closed) and say so. Only computed when the time-of-day part of `MAY_ENTER` is true; otherwise report it as not checked. The VIX gate blocks **new entries only** — exits, the aggressive/final-run exits, recovery, covered calls and sweeps all run regardless of VIX, so an open lot is never stranded by a low VIX.
+   - `MAY_ENTER` = 7:00 AM–12:00 PM PT (full day) / 7:00–9:00 AM PT (early close).
    - `AGGRESSIVE_EXIT` = 12:00–12:29 PM PT (full day) / 9:00–9:29 AM PT (early close).
    - `FINAL_RUN` = 12:30–1:00 PM PT (full day) / 9:30–10:00 AM PT (early close).
    - `OPTIONS_ALLOWED` = `FINAL_RUN` — covered calls may be sold only on the final run of the day, and only if the lot is underwater (see E3b).
@@ -16,13 +15,17 @@ You are executing a rules-based equity sleeve in my single Robinhood agentic acc
 
 ---
 
-### Tickers
+### Tickers and the trend gate
 
-Two tickers are in play, all year: `TRADE` = **TQQQ** (the 100-share swing ETF) and `PARK` = **SATA** (where idle cash sits). There is no December switch and no year-end close-out.
+`PARK` = **SATA** (where idle cash sits), all year. The 100-share swing ticker `TRADE` is either **TQQQ** or **XLK**:
 
-- **Legacy XLK lot (transition from the old XLK/SATA pair).** XLK is never entered again. If the account holds a 100-share XLK lot (with or without a short XLK call), treat XLK as `TRADE` for the run: it is the lot, managed as OPEN_TODAY or RECOVERY (E1/E3) with its own `ENTRY` until it is closed, and only then do new entries use TQQQ. Note it in the report. Never hold an XLK lot and a TQQQ lot at once.
+- **Open lot → its ticker.** If the account holds a lot in TQQQ or XLK (with or without a short call), `TRADE` is that ticker, whatever the gate says today. The lot is managed under E1/E3 until it is closed; it is never switched, sold or added to because the gate changed. Holding shares in both TQQQ and XLK at once is INVALID.
+- **No open lot → the gate picks the next entry.** Computed only when the state is FLAT/SOLD_TODAY and `MAY_ENTER` is true (otherwise report it as not checked):
+  - `QQQ_TREND_OK` = QQQ's current price is **strictly above** its 200-day simple moving average. `SMA200_QQQ` = mean of the last 200 **completed** daily closes (exclude today's session): `Robinhood:get_equity_historicals` for QQQ, interval `day`, span long enough to cover 200 sessions (e.g. `year`), bounds `regular`. Current price = QQQ last trade from `Robinhood:get_equity_quotes`. Fewer than 200 completed closes, a gap in the series, or a newest close older than the previous NYSE trading day → `QQQ_TREND_OK` = false and say so.
+  - `VIX_OK` = the latest VIX index level is **strictly above 16.00**. Read it with `Robinhood:get_index_quotes` for `VIX` (use `Robinhood:get_indexes` / `Robinhood:search` to resolve the symbol if needed). Unavailable, stale (older than 15 minutes) or unrecognised → `VIX_OK` = false and say so.
+  - `TQQQ_GATE = QQQ_TREND_OK and VIX_OK`. If true → `TRADE` = **TQQQ**; otherwise → `TRADE` = **XLK**. Any gate data failure therefore falls back to XLK (fail safe, never to TQQQ). The gate only chooses the ticker; it never blocks an entry on its own.
+- Everywhere below, `TRADE` and `PARK` mean the tickers resolved here. Snapshot positions, quotes, tradability and order history for TQQQ, XLK and SATA every run.
 - **Legacy park balances.** Any VGT or BOXX left from the old December regime is ignored like any other holding: never traded, never counted as capital.
-- Everywhere below, `TRADE` and `PARK` mean the tickers resolved here. Snapshot positions, quotes, tradability and order history for TQQQ, SATA and (while held or with open orders) XLK every run.
 
 ---
 
@@ -31,21 +34,21 @@ Two tickers are in play, all year: `TRADE` = **TQQQ** (the 100-share swing ETF) 
 1. Flags `MAY_ENTER`, `AGGRESSIVE_EXIT`, `FINAL_RUN`, `OPTIONS_ALLOWED` come from the session flags above.
    - `BREAKEVEN_EQ = ENTRY + (SELL_FEE / 100)` rounded **up** to the cent (sell fee ≈ $0.41 → effectively `ENTRY + $0.01`). A sell at or above this is not a loss.
    - `AGGRESSIVE_PX = max(BREAKEVEN_EQ, ENTRY × 1.0003)` rounded up to the cent — the "get out near breakeven" price used after 12:00.
-2. `Robinhood:get_accounts` → use the single agentic-enabled brokerage account. `Robinhood:get_equity_tradability` for TRADE and PARK (and XLK while a legacy lot exists). If the market is closed (holiday, early close, halt), report and stop.
+2. `Robinhood:get_accounts` → use the single agentic-enabled brokerage account. `Robinhood:get_equity_tradability` for TQQQ, XLK and SATA. If the market is closed (holiday, early close, halt), report and stop.
 3. Snapshot:
-   - `Robinhood:get_equity_positions` → TQQQ and XLK quantity and average cost (`ENTRY`); PARK quantity. If a legacy XLK lot exists, treat XLK as `TRADE` for this run and note it in the report.
+   - `Robinhood:get_equity_positions` → TQQQ and XLK quantity and average cost (`ENTRY` of whichever is held); PARK quantity. Resolve `TRADE` per the section above.
    - `Robinhood:get_option_positions` → any short TRADE calls (strike, expiry, quantity, premium received).
-   - `Robinhood:get_equity_orders` and `Robinhood:get_option_orders` (open only) → pending orders for TRADE, PARK, or TRADE options. Also list today's **filled** TRADE orders (needed for state).
+   - `Robinhood:get_equity_orders` and `Robinhood:get_option_orders` (open only) → pending orders for TRADE, PARK, or TRADE options. Also list today's **filled** TQQQ and XLK orders (needed for state: a sell filled today in either ticker counts for SOLD_TODAY).
    - `Robinhood:get_portfolio` → `ACCOUNT_CASH = buying_power.unleveraged_buying_power`. This already includes usable unsettled proceeds; day trades are fine.
    - **Crypto-sleeve exclusion.** The BTC/USDG rule owns its own capital in this account and trades 24/7, so its cash can sit in the account at any time (between fills and sweeps, or behind a resting BTC limit buy). `Robinhood:get_crypto_orders` → `CRYPTO_CASH` = (BTC + USDG sell proceeds) − (BTC + USDG buy costs) for all fills since `CRYPTO_SLEEVE_START_UTC = 2026-09-24T03:45:00Z`, floored at 0. `CASH = max(0, ACCOUNT_CASH − CRYPTO_CASH)`. This is deliberately conservative: if Robinhood already reserves buying power for an open crypto buy, the BTC cash is subtracted twice, which only leaves equity cash unused — never spends BTC money. Never trade, sweep, or count BTC or USDG; never let CASH include their proceeds. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
-   - `Robinhood:get_equity_quotes` for TRADE and PARK (and XLK while a legacy lot exists).
-   - Ignore all other holdings (e.g. VTI, BTC, USDG, VGT, BOXX; a legacy XLK lot is not an "other holding"): never trade them, never count them as capital.
+   - `Robinhood:get_equity_quotes` for TQQQ, XLK, SATA and QQQ.
+   - Ignore all other holdings (e.g. VTI, BTC, USDG, VGT, BOXX, QQQ): never trade them, never count them as capital.
 4. Derive the state:
-   - **FLAT**: TRADE = 0, no TRADE options, no TRADE sell filled today.
-   - **SOLD_TODAY**: TRADE = 0, no TRADE options, a 100-share TRADE sell filled today. Proceeds need sweeping.
+   - **FLAT**: TQQQ = 0 and XLK = 0, no TQQQ/XLK options, no TQQQ/XLK sell filled today.
+   - **SOLD_TODAY**: TQQQ = 0 and XLK = 0, no TQQQ/XLK options, a 100-share TQQQ or XLK sell filled today. Proceeds need sweeping.
    - **OPEN_TODAY**: TRADE = 100, entry filled today, no short call. One working DAY limit sell for 100 TRADE is expected, not a duplicate.
    - **RECOVERY**: TRADE = 100, entry filled on a prior day, or filled today with the intraday target already cancelled. May have one short call and/or one GTC recovery limit sell (see E3c).
-   - **INVALID**: anything else (TRADE ≠ 0 and ≠ 100, partial fills, two lots, a short call without 100 shares, any TRADE option other than a single short call). Place no orders; describe exactly what you see and stop.
+   - **INVALID**: anything else (TRADE ≠ 0 and ≠ 100, partial fills, two lots, shares in both TQQQ and XLK, a short call without 100 shares, any TRADE option other than a single short call). Place no orders; describe exactly what you see and stop.
 
 ### Fractional PARK rules (apply everywhere PARK is traded)
 
@@ -72,11 +75,12 @@ Do **all** that apply, in this order:
     3. Otherwise the lot is underwater: cancel the working limit, confirm cancelled. Position is now RECOVERY; run E3 (covered-call sale is permitted on this run), then E4.
     4. If no limit sell exists at all (an earlier run died after the buy): apply steps 2–3 as written.
 - **FLAT** (or SOLD_TODAY):
-  - If `MAY_ENTER` is false, or a TRADE buy order is currently open → no TRADE entry. E4, report. If the only reason is `VIX_OK` = false, report `VIX_LOW` with the VIX level (or `VIX_UNAVAILABLE`).
+  - If `MAY_ENTER` is false, or a TQQQ or XLK buy order is currently open → no entry. E4, report.
+  - Resolve the trend gate (Tickers section) to choose `TRADE` = TQQQ or XLK, and report QQQ, `SMA200_QQQ`, VIX and the choice.
   - **No-chase filter (entries at or after 11:00 AM PT only):** call `Robinhood:get_equity_historicals` for TRADE, interval `5minute`, bounds `regular`, covering the last 35 minutes. `MOVE_30 = (current TRADE ask / open of the bar that started ~30 minutes ago) − 1`. If `MOVE_30 > 0.50%`, skip the entry, report `NO_CHASE_BLOCKED` with the two prices, and run E4. If the bars are unavailable, skip the entry (fail closed) and say so. Entries before 11:00 are not subject to this filter.
   - Otherwise open a new position (E2), then E4. Any number of round trips per day is fine; only one TRADE position may exist at a time, and no entry after 12:00 PM PT.
 
-### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only — which includes VIX > 16 — and not NO_CHASE_BLOCKED)
+### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only, and not NO_CHASE_BLOCKED; TRADE as chosen by the trend gate)
 
 1. `TRADE_COST = 100 × TRADE ask × 1.003` (0.3% buffer for price drift).
 2. `SHORTFALL = TRADE_COST − CASH`. If ≤ 0, skip the PARK sale.
@@ -84,7 +88,7 @@ Do **all** that apply, in this order:
 4. Poll `get_equity_orders` for the fill. If not filled within 3 minutes, cancel with `Robinhood:cancel_equity_order` and stop.
 5. Re-read CASH. Confirm `CASH ≥ 100 × TRADE ask` with no borrowing. Review then place a **market buy for exactly 100 TRADE**. If CASH covers fewer than 100 shares, place no TRADE order and report; the cash is swept at E4.
 6. Confirm the fill; record `ENTRY` (fill price).
-7. `TARGET_PX = ENTRY × 1.0060` (+0.60%) rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
+7. `TARGET_PX = ENTRY × 1.0070` (+0.70%, same for TQQQ and XLK) rounded **up** to the cent. Review then place a **DAY limit sell for exactly 100 TRADE at TARGET_PX**. (DAY, not GTC, so a missed final run can never leave it working into recovery mode. Runs before `AGGRESSIVE_EXIT` must leave it alone; the `AGGRESSIVE_EXIT` run replaces it with the aggressive price.) Report its order ID and price.
 
 ### E3 — RECOVERY mode (any run)
 
@@ -144,5 +148,5 @@ Before placing any order that costs cash — most often buying to close a short 
 
 **All times in the report are Pacific Time** (`America/Los_Angeles`, e.g. "8:45 AM PT Wed Sep 23"). Never show UTC in prose.
 
-1. Prose, a few lines: PT time, flags (including the VIX level and `VIX_OK`), state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH` excluded), anything skipped or flagged.
-2. One fenced JSON object: `{"date","time_pt","vix","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","cash","crypto_cash_excluded","short_call","open_orders","combined","target","exit_px","orders_placed","flags"}`.
+1. Prose, a few lines: PT time, flags, trend gate (QQQ vs `SMA200_QQQ`, VIX, `TQQQ_GATE`, or not checked), `TRADE` ticker, state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH` excluded), anything skipped or flagged.
+2. One fenced JSON object: `{"date","time_pt","gate":{"qqq","qqq_sma200","vix","tqqq_gate"},"flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","cash","crypto_cash_excluded","short_call","open_orders","combined","target","exit_px","orders_placed","flags"}`.
