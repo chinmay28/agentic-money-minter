@@ -12,7 +12,7 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 - **Network access:** Custom, keep the default package managers, and allow `api.exchange.coinbase.com`, `api.kraken.com` (BTC candles) and `api.telegram.org` (reports).
 - **Environment variables:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (see below).
 
-**Telegram reports:** every run sends a short human-readable summary of both rules (format in `CLAUDE.md` step 7) to Telegram via [`scripts/telegram-send.sh`](scripts/telegram-send.sh) (tests: `scripts/telegram-send_test.sh`).
+**Telegram reports:** every run sends a short human-readable summary of all rules (format in `CLAUDE.md` step 7) to Telegram via [`scripts/telegram-send.sh`](scripts/telegram-send.sh) (tests: `scripts/telegram-send_test.sh`).
 1. In Telegram, message **@BotFather**, send `/newbot`, and follow the prompts; it gives you the bot token.
 2. Open a chat with your new bot and send it any message (bots can only message you after you write to them).
 3. In a browser, open `https://api.telegram.org/bot<token>/getUpdates` and copy `message.chat.id` — that is your chat ID.
@@ -22,3 +22,4 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 |---|---|---|---|
 | 1 | [xlk-swing](rules/xlk-swing.md) | NYSE hours (6:30 AM–1:00 PM PT) | 100-share XLK swing parked in SATA (VGT/BOXX in December), with covered-call recovery and year-end close-out |
 | 2 | [btc-usdg](rules/btc-usdg.md) | 24/7 | BTC trend sleeve parked in USDG: limit buy 1% below the 24-hour high while SMA50 > SMA200, +0.5% target, no-loss exits |
+| 3 | [tqqq-trend](rules/tqqq-trend.md) | NYSE hours (6:45 AM–12:50 PM PT) | $5,000 sleeve carved from the XLK sleeve's SATA: hold TQQQ while QQQ closes above its 200-day SMA, SATA after it closes at or below; fractional shares, switches at the next session's first run. Shares SATA with xlk-swing, told apart by the `ref_id` tag `5a7a7099-` |
