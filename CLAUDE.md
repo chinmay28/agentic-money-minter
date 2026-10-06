@@ -33,8 +33,8 @@ Two scheduled routines trigger this repository with the same one line: **"Follow
    No orders placed or cancelled.
    ```
 
-   - First line of each block: rule name (`XLK`, `BTC`, `TQQQ`) and run time. Then, as applicable: what is held and the working exit; current price and unrealized P&L; regime or entry status (e.g. `Flat · buy resting @ $84,170 (1% below 24h high $85,022)`, or for TQQQ the QQQ close vs SMA200); sleeve value and realized P&L; and one line listing every fill, placement and cancellation this run, or `No orders placed or cancelled.`
-   - Anything flagged (INVALID, INVALID_LEDGER, STALE_CANDLES, SPREAD_TOO_WIDE, NO_CHASE_BLOCKED, LONG_UNPROTECTED, STALE_DAILY_BARS, CASH_SHORTFALL, UNTAGGED_ORDER, a tool failure, …) goes on its own line starting with `⚠️`, as the first line after the header.
+   - First line of each block: rule name (`XLK`, `BTC`, `TQQQ`) and run time. Then, as applicable: what is held and the working exit; current price and unrealized P&L; regime or entry status (e.g. `Flat · buy resting @ $84,170 (1% below 24h high $85,022)`, or for TQQQ the QQQ close vs SMA200 and, when held, GLD and SATA with GLD's cost); sleeve value and realized P&L; and one line listing every fill, placement and cancellation this run, or `No orders placed or cancelled.`
+   - Anything flagged (INVALID, INVALID_LEDGER, STALE_CANDLES, SPREAD_TOO_WIDE, NO_CHASE_BLOCKED, LONG_UNPROTECTED, STALE_DAILY_BARS, CASH_SHORTFALL, GLD_HELD_UNDERWATER, UNTAGGED_ORDER, a tool failure, …) goes on its own line starting with `⚠️`, as the first line after the header.
    - Sending happens only after all rules have finished. It never changes, delays or retries any trading step.
    - If the script exits non-zero (variables missing, network blocked, Telegram error), do not retry; add one line `TELEGRAM_NOT_SENT: <the script's error message>` at the end of the run output.
    - Never print, echo or log the token, and never put it in a command line you show.
