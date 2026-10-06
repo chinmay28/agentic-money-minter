@@ -12,7 +12,7 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 - **Network access:** Custom, keep the default package managers, and allow `api.exchange.coinbase.com`, `api.kraken.com` (BTC candles) and `api.telegram.org` (reports).
 - **Environment variables:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (see below).
 
-**Telegram reports:** every run sends a short human-readable summary of all rules (format in `CLAUDE.md` step 7) to Telegram via [`scripts/telegram-send.sh`](scripts/telegram-send.sh) (tests: `scripts/telegram-send_test.sh`).
+**Telegram log:** every run appends a compact entry for all rules (format in `CLAUDE.md` step 7) to **one Telegram message per day** (days start at 6:00 AM PT), via [`scripts/telegram-log.sh`](scripts/telegram-log.sh) (tests: `scripts/telegram-log_test.sh`; needs `curl` and `jq`). The bot pins the day's message and edits it in place, so you get one notification when the day starts and the message then grows silently into a timeline; when it reaches Telegram's 4,096-character limit the day continues in a pinned `(part 2)` message. Runs keep no state of their own — the pin is how the next run finds the log, so leave the bot's latest log pinned and don't pin newer messages in that chat (if you do, the log simply restarts in a fresh message).
 1. In Telegram, message **@BotFather**, send `/newbot`, and follow the prompts; it gives you the bot token.
 2. Open a chat with your new bot and send it any message (bots can only message you after you write to them).
 3. In a browser, open `https://api.telegram.org/bot<token>/getUpdates` and copy `message.chat.id` — that is your chat ID.
