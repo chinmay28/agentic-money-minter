@@ -127,7 +127,7 @@ Goal: exit the TRADE lot with combined profit ≥ **+1.00% of `ENTRY × 100`** (
    - delta ≤ 0.30, and ≥ 0.20 when not DEEP (no lower delta bound when DEEP — the bid floor below is the liquidity filter)
    - bid ≥ $0.20 and spread ≤ max($0.15, 30% of mid)
    - assignment test: `(strike − ENTRY) × 100 + bid × 100 + realized OPTION_PNL + DIVIDENDS − COSTS ≥ TARGET`
-3. Selection: not DEEP → delta nearest 0.25 (tie → shorter DTE). DEEP → the **lowest strike that passes** (the most premium the assignment test allows; tie across expiries → shorter DTE). **Before selling the call, cancel any GTC recovery limit sell** — the shares must be free to cover. Then review and place a **sell-to-open limit for 1 contract at the mid** (never below the bid), covered by the 100 shares.
+3. Selection: not DEEP → delta nearest 0.25 (tie → shorter DTE). DEEP → the **lowest strike that passes** (the most premium the assignment test allows; tie across expiries → shorter DTE). **Before selling the call, cancel any GTC recovery limit sell** — the shares must be free to cover. Then review and place a **sell-to-open limit for 1 contract at the mid** (never below the bid), covered by the 100 shares. **Then poll `get_option_orders` for the fill, up to 2 minutes**, before moving on: the premium lands in cash the moment it fills, and E4 below must see it. If it is still unfilled after 2 minutes, leave it working (step 5 handles it next run) and go on to E4.
 4. Nothing passes → no option order.
 5. An unfilled call order from a prior run: if the current mid is within 10% of the limit, leave it; otherwise cancel and re-evaluate. If it is unfilled for a second consecutive run, cancel and re-place at `(mid + bid) / 2`.
 
@@ -137,7 +137,7 @@ Goal: exit the TRADE lot with combined profit ≥ **+1.00% of `ENTRY × 100`** (
 
 ### E4 — Sweep idle cash into PARK
 
-Runs at the end of **every** run, whatever the state or time. Re-read CASH. If `CASH ≥ $5` and no pending buy needs it, **buy `CASH` dollars of PARK** (fractional, market; round down to the cent). Review then place. The only exception: during E2, do not sweep until the TRADE buy is filled or abandoned. On a close-out, sweep into next month's PARK as the regime section says. Idle cash is never left for a later run — "the next run will sweep it" is not an acceptable outcome.
+Runs at the end of **every** run, whatever the state or time. Re-read CASH **after** every order placed earlier in this run has filled or been abandoned — in particular, premium from a covered call sold this run is CASH and must be swept this run, not left for tomorrow. If `CASH ≥ $5` and no pending buy needs it, **buy `CASH` dollars of PARK** (fractional, market; round down to the cent). Review then place. The only exception: during E2, do not sweep until the TRADE buy is filled or abandoned. On a close-out, sweep into next month's PARK as the regime section says. Idle cash is never left for a later run — "the next run will sweep it" is not an acceptable outcome.
 
 ### Funding a debit (call buyback or any other cash outlay)
 
