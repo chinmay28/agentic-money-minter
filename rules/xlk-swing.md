@@ -120,14 +120,22 @@ Goal: exit the TRADE lot with combined profit ≥ **+1.00% of `ENTRY × 100`** (
   3. E4.
 
 **E3b. Covered call (only when `OPTIONS_ALLOWED` is true — the final run of the day — AND `TRADE bid < BREAKEVEN_EQ` AND no short call is open AND E3a did not exit).** On any other run, or if the lot is at/above breakeven, skip E3b entirely and go to E3c. Rationale: calls cap the upside, so they are sold only once the day is over and the lot is underwater; a lot that is above breakeven should be exited (E3a) or left with its GTC recovery sell (E3c), not capped.
-0. `DRAWDOWN = (ENTRY − TRADE bid) / ENTRY`. `DEEP = DRAWDOWN ≥ 2.0%`. A lot that far under has no sellable 2–7-day call at or above ENTRY (delta ≈ 0.03–0.10, bid a few cents), so leaving it uncovered until it recovers is pure opportunity cost. When DEEP, look one expiry further out and take the best strike the assignment test allows instead of hunting a delta; `strike ≥ ENTRY` and the assignment test still apply, so DEEP never allows an assignment below target. Report `DRAWDOWN` and whether DEEP applied.
-1. `get_option_chains` → `get_option_instruments` (TRADE calls; **2–7 calendar days to expiry when not DEEP, 7–14 when DEEP**) → `get_option_quotes`.
+0. `DRAWDOWN = (ENTRY − TRADE bid) / ENTRY`. The drawdown picks the `TIER`, and the tier picks how far out to look:
+
+   | `DRAWDOWN` | `TIER` | Calendar days to expiry |
+   |---|---|---|
+   | < 2.0% | NORMAL | 2–7 |
+   | 2.0% to < 5.0% | DEEP | 7–14 |
+   | ≥ 5.0% | DEEPER | 7–35 |
+
+   A lot 2% under has no sellable 2–7-day call at or above ENTRY (delta ≈ 0.03–0.10, bid a few cents), and at 5% under the 7–14-day ones are just as thin, so leaving the lot uncovered until it recovers is pure opportunity cost. In DEEP and DEEPER, take the best strike the assignment test allows instead of hunting a delta; `strike ≥ ENTRY` and the assignment test still apply, so no tier ever allows an assignment below target. **Never sell a call that expires after the next `CLOSE_OUT_DAY`** (Nov 30 / Dec 31) — the close-out would have to buy it back; drop those expiries from the window. Report `DRAWDOWN` and `TIER`.
+1. `get_option_chains` → `get_option_instruments` (TRADE calls, **expiring inside the tier's window**) → `get_option_quotes`.
 2. Filters (both modes unless noted):
    - strike ≥ ENTRY
-   - delta ≤ 0.30, and ≥ 0.20 when not DEEP (no lower delta bound when DEEP — the bid floor below is the liquidity filter)
+   - delta ≤ 0.30, and ≥ 0.20 in NORMAL only (no lower delta bound in DEEP or DEEPER — the bid floor below is the liquidity filter)
    - bid ≥ $0.20 and spread ≤ max($0.15, 30% of mid)
    - assignment test: `(strike − ENTRY) × 100 + bid × 100 + realized OPTION_PNL + DIVIDENDS − COSTS ≥ TARGET`
-3. Selection: not DEEP → delta nearest 0.25 (tie → shorter DTE). DEEP → the **lowest strike that passes** (the most premium the assignment test allows; tie across expiries → shorter DTE). **Before selling the call, cancel any GTC recovery limit sell** — the shares must be free to cover. Then review and place a **sell-to-open limit for 1 contract at the mid** (never below the bid), covered by the 100 shares. **Then poll `get_option_orders` for the fill, up to 2 minutes**, before moving on: the premium lands in cash the moment it fills, and E4 below must see it. If it is still unfilled after 2 minutes, leave it working (step 5 handles it next run) and go on to E4.
+3. Selection: NORMAL → delta nearest 0.25 (tie → shorter DTE). DEEP and DEEPER → the **lowest strike that passes** (the most premium the assignment test allows; tie across expiries → shorter DTE). **Before selling the call, cancel any GTC recovery limit sell** — the shares must be free to cover. Then review and place a **sell-to-open limit for 1 contract at the mid** (never below the bid), covered by the 100 shares. **Then poll `get_option_orders` for the fill, up to 2 minutes**, before moving on: the premium lands in cash the moment it fills, and E4 below must see it. If it is still unfilled after 2 minutes, leave it working (step 5 handles it next run) and go on to E4.
 4. Nothing passes → no option order.
 5. An unfilled call order from a prior run: if the current mid is within 10% of the limit, leave it; otherwise cancel and re-evaluate. If it is unfilled for a second consecutive run, cancel and re-place at `(mid + bid) / 2`.
 
@@ -147,7 +155,7 @@ Before placing any order that costs cash — most often buying to close a short 
 
 - Exactly one TRADE lot of exactly 100 shares, or none. No averaging down, pyramiding, or second lot.
 - No naked options. At most one short TRADE call. No puts. Never both a short call and a GTC recovery sell at once. No intraday DAY limit sell once RECOVERY begins.
-- **Assignment is never a loss.** Every call sold must have strike ≥ ENTRY **and** pass the E3b assignment test, so being assigned always realizes at least `TARGET` (+1%) on the lot; a call that is assigned closes the lot at or above target, never below. DEEP mode relaxes expiry and delta only, never these two. The 100 shares backing a short call are never sold or used to fund anything while the call is open — the only way out of a short call is expiry, assignment or a buy-to-close.
+- **Assignment is never a loss.** Every call sold must have strike ≥ ENTRY **and** pass the E3b assignment test, so being assigned always realizes at least `TARGET` (+1%) on the lot; a call that is assigned closes the lot at or above target, never below. The DEEP and DEEPER tiers relax expiry and delta only, never these two. The 100 shares backing a short call are never sold or used to fund anything while the call is open — the only way out of a short call is expiry, assignment or a buy-to-close.
 - No margin borrowing (unsettled funds and day trades are fine). Never assume external deposits.
 - Always `review_*_order` before `place_*_order`; abort if the review shows borrowing, a different quantity/notional, or an unexpected estimated cost.
 - Options: limit only. Stock: market only, and only when open and tradable.
@@ -162,4 +170,4 @@ Before placing any order that costs cash — most often buying to close a short 
 **All times in the report are Pacific Time** (`America/Los_Angeles`, e.g. "8:45 AM PT Wed Sep 23"). Never show UTC in prose.
 
 1. Prose, a few lines: PT time, flags, state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after (including `CRYPTO_CASH`, `TQ_CASH` and `TQ_SATA_QTY` excluded), anything skipped or flagged.
-2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","crypto_cash_excluded","tq_cash_excluded","tq_sata_excluded","short_call","open_orders","combined","target","exit_px","drawdown","orders_placed","flags"}`.
+2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","crypto_cash_excluded","tq_cash_excluded","tq_sata_excluded","short_call","open_orders","combined","target","exit_px","drawdown","tier","orders_placed","flags"}`.
