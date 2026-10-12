@@ -120,7 +120,7 @@ Goal: exit the TRADE lot with combined profit ≥ **+1.00% of `ENTRY × 100`** (
   3. E4.
 
 **E3b. Covered call (only when `OPTIONS_ALLOWED` is true — the final run of the day — AND `TRADE bid < BREAKEVEN_EQ` AND no short call is open AND E3a did not exit).** On any other run, or if the lot is at/above breakeven, skip E3b entirely and go to E3c. Rationale: calls cap the upside, so they are sold only once the day is over and the lot is underwater; a lot that is above breakeven should be exited (E3a) or left with its GTC recovery sell (E3c), not capped.
-0. `DRAWDOWN = (ENTRY − TRADE bid) / ENTRY`. `DEEP = DRAWDOWN ≥ 3.0%`. A lot that far under has no sellable 2–7-day call at or above ENTRY (delta ≈ 0.03–0.10, bid a few cents), so leaving it uncovered until it recovers is pure opportunity cost. When DEEP, look one expiry further out and take the best strike the assignment test allows instead of hunting a delta. Report `DRAWDOWN` and whether DEEP applied.
+0. `DRAWDOWN = (ENTRY − TRADE bid) / ENTRY`. `DEEP = DRAWDOWN ≥ 3.0%`. A lot that far under has no sellable 2–7-day call at or above ENTRY (delta ≈ 0.03–0.10, bid a few cents), so leaving it uncovered until it recovers is pure opportunity cost. When DEEP, look one expiry further out and take the best strike the assignment test allows instead of hunting a delta; `strike ≥ ENTRY` and the assignment test still apply, so DEEP never allows an assignment below target. Report `DRAWDOWN` and whether DEEP applied.
 1. `get_option_chains` → `get_option_instruments` (TRADE calls; **2–7 calendar days to expiry when not DEEP, 7–14 when DEEP**) → `get_option_quotes`.
 2. Filters (both modes unless noted):
    - strike ≥ ENTRY
@@ -147,6 +147,7 @@ Before placing any order that costs cash — most often buying to close a short 
 
 - Exactly one TRADE lot of exactly 100 shares, or none. No averaging down, pyramiding, or second lot.
 - No naked options. At most one short TRADE call. No puts. Never both a short call and a GTC recovery sell at once. No intraday DAY limit sell once RECOVERY begins.
+- **Assignment is never a loss.** Every call sold must have strike ≥ ENTRY **and** pass the E3b assignment test, so being assigned always realizes at least `TARGET` (+1%) on the lot; a call that is assigned closes the lot at or above target, never below. DEEP mode relaxes expiry and delta only, never these two. The 100 shares backing a short call are never sold or used to fund anything while the call is open — the only way out of a short call is expiry, assignment or a buy-to-close.
 - No margin borrowing (unsettled funds and day trades are fine). Never assume external deposits.
 - Always `review_*_order` before `place_*_order`; abort if the review shows borrowing, a different quantity/notional, or an unexpected estimated cost.
 - Options: limit only. Stock: market only, and only when open and tradable.
