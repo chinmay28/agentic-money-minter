@@ -47,6 +47,7 @@ The switch exists to avoid year-end wash-sale complications, so the boundaries a
    - `Robinhood:get_equity_orders` and `Robinhood:get_option_orders` (open only) → pending orders for TRADE, PARK, or TRADE options. Also list today's **filled** TRADE orders (needed for state).
    - `Robinhood:get_portfolio` → `CASH = ACCOUNT_CASH = buying_power.unleveraged_buying_power`. This already includes usable unsettled proceeds; day trades are fine. All cash in the account is this sleeve's, including proceeds that a legacy position (e.g. the resting BTC sell) happens to produce. **Ignore `unsettled_funds` from `get_accounts`** — it is a gross activity figure, not spendable money; never use it in a calculation or report it as cash.
    - `Robinhood:get_equity_quotes` for all four symbols.
+   - **All-time high of TRADE** (`ATH`, for the entry filter in E1): `Robinhood:get_equity_historicals` for TRADE, `interval = month`, `bounds = regular`, `adjustment_type = split`, `start_time = 2000-01-01T00:00:00Z` (both tickers' pre-2000 prices are far below any later high), dropping bars with `interpolated = true`; plus the same call with `interval = day` from the first day of the current month (the current month's bar is not returned until it closes). `ATH = max(high_price over all those bars, current TRADE ask)` — completed bars never include today, so the live ask stands in for today's high. `ATH_GAP = 1 − TRADE ask / ATH`. Never estimate ATH from memory; if either call fails, treat the filter as blocking (fail closed) and say so.
    - Ignore all other holdings (e.g. VTI, GLD, BTC, USDG — legacy positions from retired rules; the off-regime tickers are not "other holdings"): never trade them, never count them as capital.
 4. Derive the state:
    - **FLAT**: TRADE = 0, no TRADE options, no TRADE sell filled today.
@@ -82,10 +83,11 @@ Do **all** that apply, in this order:
     4. If no limit sell exists at all (an earlier run died after the buy): apply steps 2–3 as written.
 - **FLAT** (or SOLD_TODAY):
   - If `MAY_ENTER` is false, or a TRADE buy order is currently open → no TRADE entry. E4, report.
+  - **All-time-high filter (every entry, any time of day):** `ATH_MAX_GAP = 5%`. If `ATH_GAP > ATH_MAX_GAP`, i.e. `TRADE ask < 0.95 × ATH`, skip the entry, report `ATH_FILTER_BLOCKED` with the ask, `ATH` (and the month it was set) and `ATH_GAP`, and run E4. The lot is only ever opened while TRADE trades within 5% of its highest price ever; a market that has fallen further is left alone until it climbs back, however long that takes. Recovery of an existing lot (E3) and the close-out are not affected.
   - **No-chase filter (entries at or after 11:00 AM PT only):** call `Robinhood:get_equity_historicals` for TRADE, interval `5minute`, bounds `regular`, covering the last 35 minutes. `MOVE_30 = (current TRADE ask / open of the bar that started ~30 minutes ago) − 1`. If `MOVE_30 > 0.50%`, skip the entry, report `NO_CHASE_BLOCKED` with the two prices, and run E4. If the bars are unavailable, skip the entry (fail closed) and say so. Entries before 11:00 are not subject to this filter.
   - Otherwise open a new position (E2), then E4. Any number of round trips per day is fine; only one TRADE position may exist at a time, and no entry after 12:00 PM PT.
 
-### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only, and not NO_CHASE_BLOCKED)
+### E2 — Open a TRADE position (FLAT/SOLD_TODAY + MAY_ENTER only, and neither ATH_FILTER_BLOCKED nor NO_CHASE_BLOCKED)
 
 1. `TRADE_COST = 100 × TRADE ask × 1.003` (0.3% buffer for price drift).
 2. `SHORTFALL = TRADE_COST − CASH`. If ≤ 0, skip the PARK sale.
@@ -141,6 +143,7 @@ Before placing any order that costs cash — most often buying to close a short 
 ### Equity hard rules — check before EVERY equity order
 
 - Exactly one TRADE lot of exactly 100 shares, or none. No averaging down, pyramiding, or second lot.
+- No entry while TRADE's ask is more than `ATH_MAX_GAP` (5%) below its all-time high (`ATH` from E0, computed from data every run).
 - No naked options. At most one short TRADE call. No puts. Never both a short call and a GTC recovery sell at once. No intraday DAY limit sell once RECOVERY begins.
 - **Assignment is never a loss.** Every call sold must have strike ≥ ENTRY **and** pass the E3b assignment test, so being assigned always realizes at least `TARGET` (+1%) on the lot; a call that is assigned closes the lot at or above target, never below. DEEP mode relaxes expiry and delta only, never these two. The 100 shares backing a short call are never sold or used to fund anything while the call is open — the only way out of a short call is expiry, assignment or a buy-to-close.
 - No margin borrowing (unsettled funds and day trades are fine). Never assume external deposits.
@@ -156,5 +159,5 @@ Before placing any order that costs cash — most often buying to close a short 
 
 **All times in the report are Pacific Time** (`America/Los_Angeles`, e.g. "8:45 AM PT Wed Sep 23"). Never show UTC in prose.
 
-1. Prose, a few lines: PT time, flags, state, key prices and P&L figures, every order reviewed/placed/cancelled with fill status, balances after, anything skipped or flagged.
-2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","short_call","open_orders","combined","target","exit_px","drawdown","orders_placed","flags"}`.
+1. Prose, a few lines: PT time, flags, state, key prices and P&L figures, `ATH` and `ATH_GAP`, every order reviewed/placed/cancelled with fill status, balances after, anything skipped or flagged.
+2. One fenced JSON object: `{"date","time_pt","flags":{...},"trade_ticker","park_ticker","state","entry","trade_qty","park_qty","other_park_qty","cash","short_call","open_orders","combined","target","exit_px","drawdown","ath","ath_gap","orders_placed","flags"}`.

@@ -19,11 +19,12 @@ Two scheduled routines trigger this repository with the same one line: **"Follow
    XLK: market closed (weekend). No orders.
    XLK: 100 XLK @ $202.90 · bid $167.83 · −17.3% (−$3,507.00; combined −$3,469.00 incl. $38 call premium) · recovery, GTC exit @ $204.55 working · sleeve $17,895.25
      ↳ Bought $5.58 SATA (sweep)
+   XLK: flat · ask $164.78 is 18.9% below ATH $203.25 (Oct 2026), no entry · sleeve $17,880.10
    ```
 
-   - The rule's line, as applicable: what is held and the working exit; current price, unrealized and combined P&L; state (`flat`, `open, DAY target @ …`, `recovery, …`) and any short call; sleeve value (TRADE + PARK + OTHER_PARK + cash) and realized P&L. A rule with nothing to do says so in a few words (`XLK: market closed. No orders.`).
+   - The rule's line, as applicable: what is held and the working exit; current price, unrealized and combined P&L; state (`flat`, `open, DAY target @ …`, `recovery, …`), the distance from the all-time high when flat, and any short call; sleeve value (TRADE + PARK + OTHER_PARK + cash) and realized P&L. A rule with nothing to do says so in a few words (`XLK: market closed. No orders.`).
    - Only when a rule had fills, placements or cancellations this run, add one indented line under its line starting with `↳` listing every one of them (e.g. `  ↳ Sold 100 XLK @ $203.41 (+$51) · bought $20,341.00 SATA`). No such line means no orders.
-   - Anything flagged (INVALID, NO_CHASE_BLOCKED, a tool failure, …) goes on its own indented line under the rule's line starting with `⚠️`, before any `↳` line.
+   - Anything flagged (INVALID, ATH_FILTER_BLOCKED, NO_CHASE_BLOCKED, a tool failure, …) goes on its own indented line under the rule's line starting with `⚠️`, before any `↳` line.
    - Sending happens only after all rules have finished. It never changes, delays or retries any trading step.
    - If the script exits non-zero (variables missing, network blocked, Telegram error), do not retry; add one line `TELEGRAM_NOT_SENT: <the script's error message>` at the end of the run output. If it exits 0 but prints a `telegram-log: warning:` line, add `TELEGRAM_WARNING: <that message>` at the end of the run output instead.
    - Never print, echo or log the token, and never put it in a command line you show.
