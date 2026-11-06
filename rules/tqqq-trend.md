@@ -9,21 +9,25 @@ You are executing a rules-based trend sleeve in my single Robinhood agentic acco
 - `START_CAPITAL = $5,000.00`, carved out of the XLK sleeve's SATA as `START_SATA_QTY = 50.000000` SATA shares (~$100 each)
 - `TQ_START_UTC = 2026-10-06T13:00:00Z` (6:00 AM PT Tue Oct 6, before the open). At this instant the sleeve held 50.000000 SATA, 0 TQQQ, 0 GLD and $0.00 cash (the account held no TQQQ or GLD).
 - `SMA_LEN = 200` completed daily closes of QQQ (regular session, split-adjusted)
-- `TAG = 5a7a7099` — the first 8 hex characters of the `ref_id` of **every** order this rule places (see "Order tagging")
+- SATA is attributed by **order shape**, never by `ref_id` (see "SATA attribution"): this sleeve trades SATA **by share quantity only**; `xlk-swing.md` trades SATA by dollar amount only
 - Fractional shares, market orders, regular hours only. No limit orders, no options, no margin.
 
 ### Sleeve ledger — the shared contract
 
 `xlk-swing.md` computes the same two numbers to exclude this sleeve from its own cash and SATA, so define them exactly like this and nothing else:
 
-- **Sleeve orders** = filled (or partially filled) equity orders created at or after `TQ_START_UTC` that are either (a) any **TQQQ** or **GLD** order, whatever its `ref_id` (all TQQQ and GLD belong to this sleeve, including trades I place by hand), or (b) a **SATA** order whose `ref_id` starts with `5a7a7099-` (case-insensitive). Use executed quantity, `average_price` and `fees`, never the submitted amount. SATA orders without the tag belong to `xlk-swing.md`, including SATA trades I place by hand.
-- `TQ_SATA_QTY = 50.000000 + Σ tagged SATA buy quantity − Σ tagged SATA sell quantity`
+- **Sleeve orders** = filled (or partially filled) equity orders created at or after `TQ_START_UTC` that are either (a) any **TQQQ** or **GLD** order, whatever its `ref_id` (all TQQQ and GLD belong to this sleeve, including trades I place by hand), or (b) a **SATA** order with `agent_initiated = true` that was placed **by share quantity**, i.e. its `dollar_based_amount` is null (a *sleeve SATA order*). Use executed quantity, `average_price` and `fees`, never the submitted amount. SATA orders placed by dollar amount (`dollar_based_amount` set), and every SATA order that is not agent-initiated (trades I place by hand), belong to `xlk-swing.md`.
+- `TQ_SATA_QTY = 50.000000 + Σ sleeve SATA buy quantity − Σ sleeve SATA sell quantity`
 - `TQ_CASH = Σ sleeve sell proceeds − Σ sleeve buy costs − Σ sleeve fees` (proceeds/costs = executed quantity × `average_price`), rounded to the cent. The starting SATA is an asset, not cash, so `TQ_CASH` starts at $0.00. `xlk-swing.md` subtracts `max(0, TQ_CASH)`.
 - Dividends paid on TQQQ or on the sleeve's SATA (GLD pays none) are **not** attributed to this sleeve — the tools do not identify them per share. They land in account cash and `xlk-swing.md` sweeps them. Report this as a known leak, not an error.
 
-### Order tagging
+### SATA attribution — order shape, not `ref_id`
 
-Every order this rule places uses a fresh `ref_id` whose first group is `5a7a7099`: generate a random UUID v4 (e.g. `python3 -c 'import uuid;print(uuid.uuid4())'`) and replace its first 8 hex characters with `5a7a7099`. Use a new one per logical order and resend the same one only on a transport-level retry of that same order. An order placed without the tag cannot be attributed — if it happens, report `UNTAGGED_ORDER` with its ID. Never use the tag for anything else.
+Robinhood replaces the `ref_id` of a placed order with its own approval id, so a `ref_id` cannot carry information (the sleeve's first SATA sell, 50 shares on Oct 6 2026, still shows the old `5a7a7099-` tag; it is attributed by shape like every other order, and since it was placed by quantity the ledger is unchanged). The two sleeves are told apart by a field each agent controls and the server preserves: `dollar_based_amount`.
+
+- **Every SATA order this rule places is a market order by `quantity`** (fractional, 6 decimals), never by `dollar_amount`. `xlk-swing.md` places every SATA order by `dollar_amount`, never by `quantity`. TQQQ and GLD orders need no shape rule — the symbols are this sleeve's.
+- `ref_id` is still sent, as a fresh random UUID v4 per logical order (e.g. `python3 -c 'import uuid;print(uuid.uuid4())'`), re-sent only on a transport-level retry of that same order. It is an idempotency key and nothing more.
+- After every SATA fill, read the order back with `get_equity_orders` and confirm `dollar_based_amount` is null. If it is not, the order has been attributed to the XLK sleeve: report `SATA_MISATTRIBUTED` with its ID and executed quantity and stop. The `CASH_SHORTFALL` guard in T3 keeps the next run from buying twice; I fix the ledger by hand.
 
 ### T0 — Session flags (every run)
 
@@ -43,7 +47,7 @@ Every order this rule places uses a fresh `ref_id` whose first group is `5a7a709
 ### T2 — Snapshot and state (every run)
 
 1. `Robinhood:get_equity_positions` → TQQQ and GLD quantity, `shares_available_for_sells`, `average_buy_price`; SATA quantity and `shares_available_for_sells`. `GLD_COST = GLD average_buy_price`.
-2. `Robinhood:get_equity_orders` for TQQQ, GLD and SATA with `created_at_gte = TQ_START_UTC` (page until `next` is empty). From these build the ledger above. Also list open (non-terminal) TQQQ and GLD orders and open tagged SATA orders.
+2. `Robinhood:get_equity_orders` for TQQQ, GLD and SATA with `created_at_gte = TQ_START_UTC` (page until `next` is empty). From these build the ledger above. Also list open (non-terminal) TQQQ and GLD orders and open sleeve SATA orders.
 3. `Robinhood:get_portfolio` → `ACCOUNT_CASH = buying_power.unleveraged_buying_power`. `CRYPTO_CASH` exactly as defined in `xlk-swing.md` E0. `FREE_CASH = ACCOUNT_CASH − CRYPTO_CASH`.
 4. `Robinhood:get_equity_quotes` for TQQQ, GLD, SATA and QQQ. `GLD_SELL_OK = GLD bid ≥ GLD_COST × 1.001`.
 5. Reconcile, else **INVALID_LEDGER** (no orders; describe the mismatch and stop):
@@ -51,7 +55,7 @@ Every order this rule places uses a fresh `ref_id` whose first group is `5a7a709
    - `0 ≤ TQ_SATA_QTY ≤ SATA position quantity`.
    - `TQ_CASH ≥ −$1.00`.
 6. Classify (GLD may be present in either regime — see T3):
-   - `ORDER_PENDING`: an open TQQQ or GLD order or an open tagged SATA order exists. Market orders normally fill instantly; poll it for up to 3 minutes. If it reaches a terminal state, refresh T2 and continue. Otherwise cancel it with `Robinhood:cancel_equity_order`, confirm it is terminal, report and stop.
+   - `ORDER_PENDING`: an open TQQQ or GLD order or an open sleeve SATA order exists. Market orders normally fill instantly; poll it for up to 3 minutes. If it reaches a terminal state, refresh T2 and continue. Otherwise cancel it with `Robinhood:cancel_equity_order`, confirm it is terminal, report and stop.
    - `RISK_ON_HELD`: TQQQ > 0, `TQ_SATA_QTY = 0`; GLD may be > 0 only as an underwater carry (`GLD_CARRY`).
    - `RISK_OFF_HELD`: TQQQ = 0 and (`TQ_SATA_QTY > 0` or GLD > 0).
    - `CASH_ONLY`: TQQQ = 0, `TQ_SATA_QTY = 0`, GLD = 0, `TQ_CASH ≥ $1` (a previous run died between the sell and the buy).
@@ -75,22 +79,23 @@ Do the steps in order. Each is idempotent: if the holdings already match, the st
      - `SLEEVE_VALUE = GLD qty × GLD bid + TQ_SATA_QTY × SATA bid + TQ_CASH`.
      - `GLD_BUY = min(TQ_CASH, max(0, SLEEVE_VALUE / 2 − GLD qty × GLD bid))`, rounded down to the cent. A `GLD_CARRY` from an earlier cycle counts toward the GLD half, so less (or no) new GLD is bought.
      - `SATA_BUY = TQ_CASH − GLD_BUY`, rounded down to the cent.
-     - Market-buy GLD for `GLD_BUY`, then SATA for `SATA_BUY`; skip either leg below $1.00.
+     - Market-buy GLD for `GLD_BUY` **by dollar amount**, then SATA **by quantity**: `SATA_BUY_QTY = SATA_BUY × 0.999 / SATA ask`, rounded **down** to 6 decimals (the 0.1% buffer keeps the fill inside `TQ_CASH`; the cents left over stay as sleeve cash). Skip either leg below $1.00.
    - Below $5.00 the residue stays as sleeve cash (excluded from the XLK sweep) and is deployed with the next switch.
-4. Confirm every fill from order status and positions; never infer it from price.
+4. Confirm every fill from order status and positions; never infer it from price. For a SATA fill also confirm its shape (`dollar_based_amount` null) as "SATA attribution" says.
 
 The 50/50 split is set only when cash is deployed. While risk-off, GLD and SATA are left to drift — never rebalanced by selling. The sleeve ends a run fully invested for its signal (plus < $5 of cash and any `GLD_CARRY`), or in a reported intermediate state that the next run completes from the ledger.
 
 ### Order protocol — before EVERY order
 
-- `Robinhood:review_equity_order` then `Robinhood:place_equity_order` with the identical payload plus the tagged `ref_id`. `type = market`, `market_hours = regular_hours`, `time_in_force = gfd`.
-- Sells by `quantity`; buys by `dollar_amount`. Minimum $1.00.
+- `Robinhood:review_equity_order` then `Robinhood:place_equity_order` with the identical payload plus a fresh UUID v4 `ref_id`. `type = market`, `market_hours = regular_hours`, `time_in_force = gfd`.
+- Sells by `quantity`. TQQQ and GLD buys by `dollar_amount`. **SATA buys by `quantity`**, never `dollar_amount` — that shape is the XLK sleeve's. Minimum $1.00.
 - Abort that order and report if the review shows margin or borrowing, a different symbol, side, quantity or amount, a halt, or an estimated cost above `TQ_CASH`.
 - Poll `get_equity_orders` by `order_id` until filled (up to 3 minutes). Partial fill → cancel the remainder, confirm it is terminal, rebuild the ledger and continue from actual fills. Never place a duplicate order because an earlier one looks slow.
 
 ### Hard rules
 
 - The only symbols this rule trades are TQQQ, GLD and the sleeve's own SATA (`TQ_SATA_QTY`). QQQ is read-only.
+- Every SATA order this rule places is by share quantity. Never place a SATA order by dollar amount; never place a TQQQ, GLD or SATA order through any other path than the order protocol above.
 - **Never sell GLD at a loss**: a GLD sell is placed only when `GLD_SELL_OK` is true on a fresh quote taken just before the review, and only in risk-on. No stop, regime, cash need or rebalance overrides this.
 - Never hold TQQQ and the sleeve's SATA at the same time beyond a single switch; never buy TQQQ while `SIGNAL = RISK_OFF`; never buy GLD or SATA while `SIGNAL = RISK_ON`.
 - No leverage beyond TQQQ itself: no margin, no options, no short sales, no limit or stop orders.
