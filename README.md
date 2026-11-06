@@ -9,7 +9,7 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 [`CLAUDE.md`](CLAUDE.md) defines the run order and how the rules interact; each rule decides for itself whether it has anything to do at the current time.
 
 **Environment setup** (the cloud environment the routines run in → Edit):
-- **Network access:** Custom, keep the default package managers, and allow `api.exchange.coinbase.com`, `api.kraken.com` (BTC candles) and `api.telegram.org` (reports).
+- **Network access:** Custom, keep the default package managers, and allow `api.telegram.org` (reports).
 - **Environment variables:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (see below).
 
 **Telegram log:** every run appends a compact entry for all rules (format in `CLAUDE.md` step 7) to **one Telegram message per day** (days start at 6:00 AM PT), via [`scripts/telegram-log.sh`](scripts/telegram-log.sh) (tests: `scripts/telegram-log_test.sh`; needs `curl` and `jq`). The bot pins the day's message and edits it in place, so you get one notification when the day starts and the message then grows silently into a timeline; when it reaches Telegram's 4,096-character limit the day continues in a pinned `(part 2)` message. Runs keep no state of their own — the pin is how the next run finds the log, so leave the bot's latest log pinned and don't pin newer messages in that chat (if you do, the log simply restarts in a fresh message).
@@ -21,5 +21,5 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 | Order | Rule | Active | Summary |
 |---|---|---|---|
 | 1 | [xlk-swing](rules/xlk-swing.md) | NYSE hours (6:30 AM–1:00 PM PT) | 100-share XLK swing parked in SATA (VGT/BOXX in December), with covered-call recovery and year-end close-out |
-| 2 | [btc-usdg](rules/btc-usdg.md) | 24/7 | BTC trend sleeve parked in USDG: limit buy 1% below the 24-hour high while SMA50 > SMA200, +0.5% target, no-loss exits |
-| 3 | [tqqq-trend](rules/tqqq-trend.md) | NYSE hours (6:45 AM–12:50 PM PT) | $5,000 sleeve carved from the XLK sleeve's SATA: hold TQQQ while QQQ closes above its 200-day SMA, half GLD / half SATA after it closes at or below (GLD never sold at a loss — kept until it is back above cost); fractional shares, switches at the next session's first run. Shares SATA with xlk-swing, told apart by order shape: this sleeve trades SATA by share quantity, xlk-swing by dollar amount |
+
+Retired on Nov 6 2026: the BTC/USDG sleeve and the TQQQ/GLD/SATA trend sleeve (see git history). Their leftover positions — GLD, BTC with its resting sell, USDG — stay in the account as legacy holdings that the XLK rule ignores and never trades; whatever cash they return to the account becomes XLK-sleeve cash.
