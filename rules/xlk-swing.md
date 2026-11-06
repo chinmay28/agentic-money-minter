@@ -83,7 +83,7 @@ Do **all** that apply, in this order:
     4. If no limit sell exists at all (an earlier run died after the buy): apply steps 2–3 as written.
 - **FLAT** (or SOLD_TODAY):
   - If `MAY_ENTER` is false, or a TRADE buy order is currently open → no TRADE entry. E4, report.
-  - **All-time-high filter (every entry, any time of day):** `ATH_MAX_GAP = 5%`. If `ATH_GAP > ATH_MAX_GAP`, i.e. `TRADE ask < 0.95 × ATH`, skip the entry, report `ATH_FILTER_BLOCKED` with the ask, `ATH` (and the month it was set) and `ATH_GAP`, and run E4. The lot is only ever opened while TRADE trades within 5% of its highest price ever; a market that has fallen further is left alone until it climbs back, however long that takes. Recovery of an existing lot (E3) and the close-out are not affected.
+  - **All-time-high filter (every entry, any time of day):** `ATH_MIN_GAP = 5%`. If `ATH_GAP < ATH_MIN_GAP`, i.e. `TRADE ask > 0.95 × ATH`, skip the entry, report `ATH_FILTER_BLOCKED` with the ask, `ATH` (and the month it was set) and `ATH_GAP`, and run E4. The lot is only ever opened while TRADE trades **more than 5% below** its highest price ever — the rule buys pullbacks, never a market at or near its high. A lot sold at target near the high is therefore not re-bought until the next 5% pullback, however long that takes. Recovery of an existing lot (E3) and the close-out are not affected.
   - **No-chase filter (entries at or after 11:00 AM PT only):** call `Robinhood:get_equity_historicals` for TRADE, interval `5minute`, bounds `regular`, covering the last 35 minutes. `MOVE_30 = (current TRADE ask / open of the bar that started ~30 minutes ago) − 1`. If `MOVE_30 > 0.50%`, skip the entry, report `NO_CHASE_BLOCKED` with the two prices, and run E4. If the bars are unavailable, skip the entry (fail closed) and say so. Entries before 11:00 are not subject to this filter.
   - Otherwise open a new position (E2), then E4. Any number of round trips per day is fine; only one TRADE position may exist at a time, and no entry after 12:00 PM PT.
 
@@ -143,7 +143,7 @@ Before placing any order that costs cash — most often buying to close a short 
 ### Equity hard rules — check before EVERY equity order
 
 - Exactly one TRADE lot of exactly 100 shares, or none. No averaging down, pyramiding, or second lot.
-- No entry while TRADE's ask is more than `ATH_MAX_GAP` (5%) below its all-time high (`ATH` from E0, computed from data every run).
+- No entry unless TRADE's ask is more than `ATH_MIN_GAP` (5%) below its all-time high (`ATH` from E0, computed from data every run).
 - No naked options. At most one short TRADE call. No puts. Never both a short call and a GTC recovery sell at once. No intraday DAY limit sell once RECOVERY begins.
 - **Assignment is never a loss.** Every call sold must have strike ≥ ENTRY **and** pass the E3b assignment test, so being assigned always realizes at least `TARGET` (+1%) on the lot; a call that is assigned closes the lot at or above target, never below. DEEP mode relaxes expiry and delta only, never these two. The 100 shares backing a short call are never sold or used to fund anything while the call is open — the only way out of a short call is expiry, assignment or a buy-to-close.
 - No margin borrowing (unsettled funds and day trades are fine). Never assume external deposits.

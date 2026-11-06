@@ -19,7 +19,7 @@ Two scheduled routines trigger this repository with the same one line: **"Follow
    XLK: market closed (weekend). No orders.
    XLK: 100 XLK @ $202.90 · bid $167.83 · −17.3% (−$3,507.00; combined −$3,469.00 incl. $38 call premium) · recovery, GTC exit @ $204.55 working · sleeve $17,895.25
      ↳ Bought $5.58 SATA (sweep)
-   XLK: flat · ask $164.78 is 18.9% below ATH $203.25 (Oct 2026), no entry · sleeve $17,880.10
+   XLK: flat · ask $201.40 is 0.9% below ATH $203.25 (Oct 2026), no entry until >5% below · sleeve $17,880.10
    ```
 
    - The rule's line, as applicable: what is held and the working exit; current price, unrealized and combined P&L; state (`flat`, `open, DAY target @ …`, `recovery, …`), the distance from the all-time high when flat, and any short call; sleeve value (TRADE + PARK + OTHER_PARK + cash) and realized P&L. A rule with nothing to do says so in a few words (`XLK: market closed. No orders.`).

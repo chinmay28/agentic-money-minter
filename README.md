@@ -20,6 +20,6 @@ Rules-based trading instructions run by scheduled Claude routines against a Robi
 
 | Order | Rule | Active | Summary |
 |---|---|---|---|
-| 1 | [xlk-swing](rules/xlk-swing.md) | NYSE hours (6:30 AM–1:00 PM PT) | 100-share XLK swing parked in SATA (VGT/BOXX in December), entered only within 5% of the all-time high, with covered-call recovery and year-end close-out |
+| 1 | [xlk-swing](rules/xlk-swing.md) | NYSE hours (6:30 AM–1:00 PM PT) | 100-share XLK swing parked in SATA (VGT/BOXX in December), entered only on pullbacks of more than 5% from the all-time high, with covered-call recovery and year-end close-out |
 
 Retired on Nov 6 2026: the BTC/USDG sleeve and the TQQQ/GLD/SATA trend sleeve (see git history). Their leftover positions — GLD, BTC with its resting sell, USDG — stay in the account as legacy holdings that the XLK rule ignores and never trades; whatever cash they return to the account becomes XLK-sleeve cash.
