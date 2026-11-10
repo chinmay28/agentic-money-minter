@@ -22,10 +22,10 @@ Two tickers are in play at any time: `TRADE` (the 100-share swing ETF) and `PARK
 
 | Regime | TRADE | PARK |
 |---|---|---|
-| XLK regime | XLK | SATA |
-| VGT regime | VGT | STRC |
+| XLK regime (home) | XLK | SATA |
+| VGT regime (temporary) | VGT | STRC |
 
-`OTHER_TRADE` and `OTHER_PARK` are the other pair's tickers. The sleeve sits in one regime until that regime's own tickers are far enough under water to be worth harvesting, then moves wholesale to the other pair; the same test moves it back. The minimum stay keeps every switch outside the wash-sale window of the previous one.
+`OTHER_TRADE` and `OTHER_PARK` are the other pair's tickers. XLK/SATA is the preferred pair. The sleeve leaves it only to harvest a loss — when XLK or SATA is far enough under water — and parks in VGT/STRC just long enough to clear the wash-sale window, then returns to XLK/SATA whatever VGT and STRC have done. The 60-day minimum stay on each side keeps every switch outside the wash-sale window of the previous one.
 
 **Which regime is current** (no memory — first match wins):
 1. Shares or an option position in XLK or in VGT → that ticker's regime. Positions in both → INVALID.
@@ -42,11 +42,12 @@ Read both from `get_equity_orders`, paging back as far as needed. If the history
 **Switch trigger.** Stock prices only; option premium and dividends are not counted.
 - `TRADE_LOSS = 1 − TRADE bid / ENTRY` when the 100-share lot is held (`ENTRY` = its average cost), else 0.
 - `PARK_LOSS = 1 − PARK bid / PARK average cost` when PARK is held, else 0.
-- `REGIME_SWITCH` = `REGIME_OLD_ENOUGH` and (`TRADE_LOSS > 10%` or `PARK_LOSS > 10%`). Exactly 10.0% is not enough. A missing quote or average cost makes that leg 0.
+- **In the XLK regime** (leave on a loss): `REGIME_SWITCH` = `REGIME_OLD_ENOUGH` and (`TRADE_LOSS > 10%` or `PARK_LOSS > 10%`). Exactly 10.0% is not enough. A missing quote or average cost makes that leg 0.
+- **In the VGT regime** (always come home): `REGIME_SWITCH` = `REGIME_OLD_ENOUGH`, nothing else. Once 60 days have passed the sleeve returns to XLK/SATA regardless of `TRADE_LOSS` and `PARK_LOSS` — at a gain, at a loss, flat or mid-recovery. The two losses are still computed and reported there, but decide nothing.
 
-The rule is symmetric: in the XLK regime it tests XLK and SATA and moves to VGT/STRC; in the VGT regime it tests VGT and STRC and moves back to XLK/SATA. There is no calendar switch and no year-end close-out.
+There is no calendar switch and no year-end close-out.
 
-**Regime switch (FINAL_RUN only).** `REGIME_SWITCH` is evaluated on every run and reported, but acted on only when `FINAL_RUN` is also true; earlier runs that day behave normally. That run performs the switch instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask (funded per "Funding a debit") and wait for the fill; (3) market-sell all 100 TRADE shares, if a lot is held; (4) market-sell the entire PARK position by share quantity (fractional, the full position); (5) run E4 with `PARK` set to **`OTHER_PARK`**, so the whole sleeve lands in the new regime's park ticker. Both legs are sold even when only one is past 10%, and even when the lot is in recovery — the realized loss is intentional. Report every fill, the realized P&L on the closed lot and on PARK, and `REGIME_SWITCHED from → to`. From the next run on, the resolution above yields the new regime, whose age restarts at 0.
+**Regime switch (FINAL_RUN only).** `REGIME_SWITCH` is evaluated on every run and reported, but acted on only when `FINAL_RUN` is also true; earlier runs that day behave normally. That run performs the switch instead of E1: (1) cancel every open order in TRADE, PARK and TRADE options (DAY target, GTC recovery sell, open call order); (2) buy to close any short call with a limit at the ask (funded per "Funding a debit") and wait for the fill; (3) market-sell all 100 TRADE shares, if a lot is held; (4) market-sell the entire PARK position by share quantity (fractional, the full position); (5) run E4 with `PARK` set to **`OTHER_PARK`**, so the whole sleeve lands in the new regime's park ticker. Both legs are sold even when only one is past 10% (XLK regime), whatever their P&L (VGT regime), and even when the lot is in recovery — any realized loss is intentional. Report every fill, the realized P&L on the closed lot and on PARK, and `REGIME_SWITCHED from → to`. From the next run on, the resolution above yields the new regime, whose age restarts at 0.
 
 Boundaries:
 - **Never open a position in an off-regime ticker.** No OTHER_TRADE entry, no OTHER_TRADE covered call, no sweep into OTHER_PARK — the regime switch is the only thing that buys the other pair.
